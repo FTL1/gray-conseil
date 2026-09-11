@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   build-and-release:
+    if: github.repository == 'mpurdon/greyeminence'
     runs-on: macos-15
     timeout-minutes: 60
 
