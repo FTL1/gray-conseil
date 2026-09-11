@@ -217,6 +217,7 @@ final class RecordingViewModel {
         selectedEvent = nil
         calendarSelectionCleared = true
         prepContext = nil
+        speakerRoster.resetExpectedAttendees()
     }
 
     /// Undo a clear, re-offering the chooser (or auto-picking a lone candidate).
@@ -1808,10 +1809,20 @@ final class RecordingViewModel {
                 self.log.log("AI intelligence service starting (model: \(modelID))", category: .ai)
             }
             let meetingID = await MainActor.run { self.currentMeeting?.id }
+            let steering = await MainActor.run { (
+                self.currentMeeting?.analysisGuidance ?? "",
+                self.currentMeeting?.suppressedActionItems ?? [],
+                self.currentMeeting?.suppressedFollowUps ?? [],
+                self.currentMeeting?.suppressedSummaryPoints ?? []
+            ) }
             let service = AIIntelligenceService(
                 client: client,
                 prepContext: prepCtx,
                 meetingID: meetingID,
+                suppressedActionItems: steering.1,
+                suppressedFollowUps: steering.2,
+                suppressedSummaryPoints: steering.3,
+                analysisGuidance: steering.0,
                 relatedContextProvider: RelatedMeetingContext.provider(excludingMeetingID: meetingID)
             )
             let clientModelID = client.modelIdentifier
@@ -2058,20 +2069,11 @@ final class RecordingViewModel {
             attendeeNames: names,
             meName: SpeakerNames.effectiveMeName
         )
-        if let myID {
-            if let index = speakerRoster.seats.firstIndex(where: \.isMe) {
-                speakerRoster.seats[index].contactID = myID
-            }
-        }
-        for index in speakerRoster.seats.indices {
-            if speakerRoster.seats[index].contactID != nil { continue }
-            if let contact = meeting.attendees.first(where: {
-                SpeakerNameMatcher.samePerson(speakerRoster.seats[index].name, $0.name)
-                    || $0.name.compare(speakerRoster.seats[index].name, options: .caseInsensitive) == .orderedSame
-            }) {
-                speakerRoster.seats[index].contactID = contact.id
-            }
-        }
+        speakerRoster.attachContacts(
+            attendees: meeting.attendees,
+            myContactID: myID,
+            meNames: [SpeakerNames.effectiveMeName].compactMap { $0 }
+        )
     }
 
     func seedRoster(from event: CalendarEvent) {

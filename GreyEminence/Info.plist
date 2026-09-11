@@ -35,7 +35,7 @@
 	<key>SUPublicEDKey</key>
 	<string>YOyoHHGKi4s99Ze1dIcPl1GZKK/bfZtm0QjwATBzI7Q=</string>
 	<key>SUFeedURL</key>
-	<string>https://github.com/FTL1/grey-conseil/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/FTL1/greyeminence/releases/latest/download/appcast.xml</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<!--

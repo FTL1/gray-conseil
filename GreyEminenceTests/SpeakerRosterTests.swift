@@ -2,6 +2,25 @@ import XCTest
 @testable import Grey_Eminence
 
 final class SpeakerRosterTests: XCTestCase {
+    func testMixerSeatsCapKeepsMeAndHidesTheTail() {
+        let roster = SpeakerRoster()
+        let names = (1...40).map { "Person \($0)" }
+        roster.seed(attendeeNames: names, meName: "Alex")
+        let layout = roster.mixerSeats(in: [], cap: 12)
+        XCTAssertEqual(layout.shown.count, 12)
+        XCTAssertEqual(layout.hidden, roster.seats.count - 12)
+        XCTAssertTrue(layout.shown.first?.isMe == true)
+        XCTAssertEqual(layout.shown.filter(\.isMe).count, 1)
+    }
+
+    func testResetExpectedAttendeesKeepsMe() {
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["Pat", "Jordan"], meName: "Alex")
+        roster.resetExpectedAttendees()
+        XCTAssertEqual(roster.seats.map(\.name), ["Alex"])
+        XCTAssertTrue(roster.seats[0].isMe)
+    }
+
     func testSeedAddsMeAndAttendeesOnce() {
         let roster = SpeakerRoster()
         roster.seed(attendeeNames: ["Pat", "Jordan", "Pat"], meName: "Alex")
@@ -16,6 +35,14 @@ final class SpeakerRosterTests: XCTestCase {
         XCTAssertEqual(roster.seats.filter(\.isMe).count, 1)
         XCTAssertFalse(roster.seats.contains { $0.name == "Alex Morgan" })
         XCTAssertTrue(roster.seats.contains { $0.name == "Jordan Hale" })
+    }
+
+    func testSeedDoesNotAddInitialsLabelNextToMe() {
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["JD Jane", "BS Bob"], meName: "Jane")
+        XCTAssertEqual(roster.seats.filter(\.isMe).count, 1)
+        XCTAssertFalse(roster.seats.contains { $0.name == "JD Jane" })
+        XCTAssertTrue(roster.seats.contains { $0.name == "BS Bob" })
     }
 
     func testSpokenSeatsDropsDuplicateAlexMorganChip() {

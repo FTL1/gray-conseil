@@ -6,20 +6,20 @@ Plain-language map of the two codebases. For how we *port* his releases, see [UP
 
 [Matt Purdon’s Grey Eminence](https://github.com/mpurdon/greyeminence) is the **shipping product**. People install it as **Grey Eminence**. It auto-updates from his Sparkle feed. Meetings live in his production library.
 
-**Grey Conseil** (this repo) is a **side-by-side unofficial fork**, hosted at [FTL1/grey-conseil](https://github.com/FTL1/grey-conseil). It is not a replacement. Both can sit in Applications at the same time. Thorough map: [DIVERGENCE.md](DIVERGENCE.md). Legal: [DISCLAIMER.md](DISCLAIMER.md). Why the name: [NAME.md](NAME.md).
+**Grey Conseil** (this repo) is a **side-by-side unofficial fork**, hosted at [FTL1/greyeminence](https://github.com/FTL1/greyeminence). It is not a replacement. Both can sit in Applications at the same time. Thorough map: [DIVERGENCE.md](DIVERGENCE.md). Legal: [DISCLAIMER.md](DISCLAIMER.md). Why the name: [NAME.md](NAME.md).
 
 Matt’s **Grey Eminence** is *éminence grise* — the unofficial counselor ([word histories](https://wordhistories.net/2019/07/24/eminence-grise/)). **Grey Conseil** keeps that grey and adds Verne’s servant **Conseil** (counsel) from [*Twenty Thousand Leagues Under the Sea*](https://archive.org/details/in.ernet.dli.2015.459144). Homage, plus humor. Not a second Grey Eminence.
 
-| | Matt (`mpurdon/greyeminence`) | Grey Conseil (`FTL1/grey-conseil`) |
+| | Matt (`mpurdon/greyeminence`) | Grey Conseil (`FTL1/greyeminence`) |
 | --- | --- | --- |
 | What it is | Production Grey Eminence | Unofficial test kitchen |
 | GitHub default work | `main`, tagged Sparkle releases | Branch `feature/speaker-session-rename` |
 | Latest *his* release (as of this write-up) | **v0.30.1** (20 Aug 2026) | — |
-| Latest *our* build | — | **Grey Conseil 0.28.4-ftl51** |
+| Latest *our* build | — | **Grey Conseil 0.28.4-public.1** |
 | Dock name | Grey Eminence | **Grey Conseil** |
 | Bundle ID | `com.greyeminence.app` | `com.ftl1.greyeminence` |
 | Meeting library | Production store | **Isolated** Grey Conseil store |
-| Auto-update | Sparkle, **his** feed | Sparkle, **this** repo (`FTL1/grey-conseil` Releases) |
+| Auto-update | Sparkle, **his** feed | Sparkle, **this** repo (`FTL1/greyeminence` Releases) |
 | Tahoe (macOS 26) | Sandboxed production build | **Unsandboxed** ad-hoc DMG so it launches |
 | AI | Claude or AWS Bedrock | Those **plus xAI (Grok)** |
 

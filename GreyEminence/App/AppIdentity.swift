@@ -9,9 +9,9 @@ enum AppIdentity {
     static let productName = "Grey Conseil"
     /// GitHub repo that Check for Updates talks to. Bundle ID stays
     /// `com.ftl1.greyeminence` (library + TCC). The public repo is
-    /// `FTL1/grey-conseil`.
-    static let githubRepoPath = "FTL1/grey-conseil"
-    static let updatesFeedURL = "https://github.com/FTL1/grey-conseil/releases/latest/download/appcast.xml"
+    /// `FTL1/greyeminence`.
+    static let githubRepoPath = "FTL1/greyeminence"
+    static let updatesFeedURL = "https://github.com/FTL1/greyeminence/releases/latest/download/appcast.xml"
 
     static var bundleID: String {
         Bundle.main.bundleIdentifier ?? productionBundleID

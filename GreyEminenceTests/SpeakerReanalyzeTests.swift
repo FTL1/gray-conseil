@@ -22,6 +22,45 @@ final class SpeakerReanalyzeTests: XCTestCase {
         XCTAssertFalse(SpeakerNameMatcher.samePerson("Sam", "Jordan"))
     }
 
+    func testNameMatcherStripsCalendarInitials() {
+        XCTAssertTrue(SpeakerNameMatcher.samePerson("JD Jane", "Jane"))
+        XCTAssertTrue(SpeakerNameMatcher.samePerson("BS Bob", "Bob Smith"))
+        XCTAssertTrue(SpeakerNameMatcher.samePerson("BS Bob", "Bob"))
+        // Title-case "Al" is a name, not initials.
+        XCTAssertFalse(SpeakerNameMatcher.samePerson("Al Smith", "Bob Smith"))
+        XCTAssertFalse(SpeakerNameMatcher.samePerson("JD Jane", "Jordan"))
+    }
+
+    func testAttachContactsPrefersHeaderAttendeeForMe() {
+        let profile = Contact(name: "Jane")
+        profile.colorSlot = 9
+        let header = Contact(name: "JD Jane")
+        header.colorSlot = 1
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["JD Jane", "BS Bob"], meName: "Jane")
+        roster.attachContacts(
+            attendees: [profile, header],
+            myContactID: profile.id,
+            meNames: ["Jane"]
+        )
+        XCTAssertEqual(roster.seats.first { $0.isMe }?.contactID, header.id)
+        let bob = Contact(name: "BS Bob")
+        bob.colorSlot = 8
+        roster.addSeat(name: "Bob Smith")
+        roster.attachContacts(
+            attendees: [profile, header, bob],
+            myContactID: profile.id,
+            meNames: ["Jane"]
+        )
+        XCTAssertTrue(roster.seats.contains { $0.contactID == bob.id })
+        roster.collapseSamePersonSeats()
+        XCTAssertTrue(roster.seats.contains { $0.isMe && $0.contactID == header.id })
+        XCTAssertEqual(
+            roster.seats.filter { $0.contactID == bob.id }.count,
+            1
+        )
+    }
+
     func testUnmatchedStyleLabels() {
         XCTAssertEqual(UnmatchedSpeakerStyle.guest.label(index: 2), "speaker-2")
         XCTAssertEqual(UnmatchedSpeakerStyle.unknown.label(index: 2), "speaker-2")

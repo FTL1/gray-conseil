@@ -111,6 +111,8 @@ actor AIIntelligenceService {
     private let meetingID: UUID?
     private let suppressedActionItems: [String]
     private let suppressedFollowUps: [String]
+    private let suppressedSummaryPoints: [String]
+    private let analysisGuidance: String
     private let relatedContextProvider: RelatedContextProvider?
     private var previousSummary: String = ""
     private var previousActionItems: [ParsedActionItem] = []
@@ -124,6 +126,8 @@ actor AIIntelligenceService {
         meetingID: UUID? = nil,
         suppressedActionItems: [String] = [],
         suppressedFollowUps: [String] = [],
+        suppressedSummaryPoints: [String] = [],
+        analysisGuidance: String = "",
         relatedContextProvider: RelatedContextProvider? = nil
     ) {
         self.client = client
@@ -131,6 +135,8 @@ actor AIIntelligenceService {
         self.meetingID = meetingID
         self.suppressedActionItems = suppressedActionItems
         self.suppressedFollowUps = suppressedFollowUps
+        self.suppressedSummaryPoints = suppressedSummaryPoints
+        self.analysisGuidance = analysisGuidance
         self.relatedContextProvider = relatedContextProvider
     }
 
@@ -155,7 +161,10 @@ actor AIIntelligenceService {
 
         if previousSummary.isEmpty {
             transcript = AIPromptTemplates.formatSegments(Array(nonEmpty))
-            userPrompt = AIPromptTemplates.initialAnalysisPrompt(transcript: transcript)
+            userPrompt = AIPromptTemplates.initialAnalysisPrompt(
+                transcript: transcript,
+                analysisGuidance: analysisGuidance
+            )
         } else {
             transcript = AIPromptTemplates.formatSegments(newSegments)
             userPrompt = AIPromptTemplates.rollingAnalysisPrompt(
@@ -165,7 +174,9 @@ actor AIIntelligenceService {
                 previousTopics: previousTopics,
                 newTranscript: transcript,
                 suppressedActionItems: suppressedActionItems,
-                suppressedFollowUps: suppressedFollowUps
+                suppressedFollowUps: suppressedFollowUps,
+                suppressedSummaryPoints: suppressedSummaryPoints,
+                analysisGuidance: analysisGuidance
             )
         }
         userPrompt += AIPromptTemplates.screenObservationBlock(screenObservations)
@@ -222,7 +233,8 @@ actor AIIntelligenceService {
         segments: [SegmentSnapshot],
         roster: MeetingRoster? = nil,
         screenObservations: String? = nil,
-        calendarTitle: String? = nil
+        calendarTitle: String? = nil,
+        keptSummary: String = ""
     ) async throws -> AnalysisResult? {
         let nonEmpty = segments.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         guard !nonEmpty.isEmpty else { return nil }
@@ -233,7 +245,10 @@ actor AIIntelligenceService {
             calendarTitle: calendarTitle ?? "",
             myName: roster?.myName,
             suppressedActionItems: suppressedActionItems,
-            suppressedFollowUps: suppressedFollowUps
+            suppressedFollowUps: suppressedFollowUps,
+            suppressedSummaryPoints: suppressedSummaryPoints,
+            analysisGuidance: analysisGuidance,
+            keptSummary: keptSummary.isEmpty ? previousSummary : keptSummary
         )
         userPrompt += AIPromptTemplates.screenObservationBlock(screenObservations)
 
@@ -255,6 +270,75 @@ actor AIIntelligenceService {
         let parsed = try parseResponse(response, raw: response)
         LogManager.send("AI reanalysis complete", category: .ai, meetingID: meetingID)
         return parsed
+    }
+
+    /// Pass 1: dated commitments / decisions / questions. Raw JSON string.
+    func extractFacts(
+        segments: [SegmentSnapshot],
+        windowLabel: String,
+        analysisGuidance: String? = nil
+    ) async throws -> String {
+        let nonEmpty = segments.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !nonEmpty.isEmpty else { return "{}" }
+        let transcript = AIPromptTemplates.formatSegments(nonEmpty)
+        let userPrompt = AIPromptTemplates.extractFactsPrompt(
+            transcript: transcript,
+            windowLabel: windowLabel,
+            analysisGuidance: analysisGuidance ?? self.analysisGuidance
+        )
+        let capturedMeetingID = meetingID
+        let system = "You extract dated facts from meeting transcripts. Return JSON only. No markdown."
+        let response = try await AIUsageContext.attribute(.reanalysis, meetingID: capturedMeetingID) {
+            try await AIRetry.run(label: "extract-facts", meetingID: capturedMeetingID) { [client, userPrompt] in
+                try await withTimeout(seconds: AIClientFactory.analysisTimeoutSeconds) {
+                    try await client.sendMessage(system: system, userContent: userPrompt, maxTokens: 4096)
+                }
+            }
+        }
+        LogManager.send(
+            "AI extract-facts (\(response.count) chars) window=\(windowLabel)",
+            category: .ai,
+            meetingID: meetingID
+        )
+        return response
+    }
+
+    func synthesizeFromExtract(
+        extract: String,
+        windowLabel: String,
+        calendarTitle: String?,
+        roster: MeetingRoster?,
+        keptSummary: String = "",
+        screenObservations: String? = nil
+    ) async throws -> AnalysisResult? {
+        guard !extract.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var userPrompt = AIPromptTemplates.synthesizeFromExtractPrompt(
+            extract: extract,
+            windowLabel: windowLabel,
+            calendarTitle: calendarTitle ?? "",
+            myName: roster?.myName,
+            analysisGuidance: analysisGuidance,
+            keptSummary: keptSummary,
+            suppressedActionItems: suppressedActionItems,
+            suppressedFollowUps: suppressedFollowUps,
+            suppressedSummaryPoints: suppressedSummaryPoints
+        )
+        userPrompt += AIPromptTemplates.screenObservationBlock(screenObservations)
+        let capturedMeetingID = meetingID
+        let systemPrompt = effectiveSystemPrompt(roster: roster)
+        let response = try await AIUsageContext.attribute(.reanalysis, meetingID: capturedMeetingID) {
+            try await AIRetry.run(label: "synthesize-extract", meetingID: capturedMeetingID) { [client, systemPrompt, userPrompt] in
+                try await withTimeout(seconds: AIClientFactory.analysisTimeoutSeconds) {
+                    try await client.sendMessage(system: systemPrompt, userContent: userPrompt)
+                }
+            }
+        }
+        LogManager.send(
+            "AI synthesize-from-extract (\(response.count) chars)",
+            category: .ai,
+            meetingID: meetingID
+        )
+        return try parseResponse(response, raw: response)
     }
 
     func analyzeSection(
@@ -286,7 +370,9 @@ actor AIIntelligenceService {
             currentTopics: currentTopics,
             vocalCues: vocalCues,
             suppressedActionItems: suppressedActionItems,
-            suppressedFollowUps: suppressedFollowUps
+            suppressedFollowUps: suppressedFollowUps,
+            suppressedSummaryPoints: suppressedSummaryPoints,
+            analysisGuidance: analysisGuidance
         )
         userPrompt += AIPromptTemplates.screenObservationBlock(screenObservations)
 
@@ -355,7 +441,9 @@ actor AIIntelligenceService {
             currentTopics: previousTopics,
             suppressedActionItems: suppressedActionItems,
             suppressedFollowUps: suppressedFollowUps,
-            relatedContext: relatedContext
+            suppressedSummaryPoints: suppressedSummaryPoints,
+            relatedContext: relatedContext,
+            analysisGuidance: analysisGuidance
         )
         userPrompt += AIPromptTemplates.screenObservationBlock(screenObservations)
 

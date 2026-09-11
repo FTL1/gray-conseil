@@ -394,6 +394,30 @@ enum SpeakerNameMatcher {
     }
 
     static func samePerson(_ a: String, _ b: String) -> Bool {
+        if tokensMatch(a, b) { return true }
+        let strippedA = strippingLeadingInitials(a)
+        let strippedB = strippingLeadingInitials(b)
+        if strippedA == normalize(a), strippedB == normalize(b) { return false }
+        return tokensMatch(strippedA, strippedB)
+            || tokensMatch(strippedA, b)
+            || tokensMatch(a, strippedB)
+    }
+
+    /// Calendar/CRM labels like "JD Jane" or "BS Bob" — a two-letter
+    /// ALL-CAPS token, then the given name. "Al Smith" (title case) is a
+    /// name, not initials.
+    static func strippingLeadingInitials(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalParts = trimmed.split(whereSeparator: \.isWhitespace)
+        guard originalParts.count >= 2 else { return normalize(raw) }
+        let first = String(originalParts[0])
+        guard first.count == 2,
+              first.allSatisfy({ $0.isLetter && $0.isUppercase })
+        else { return normalize(raw) }
+        return normalize(originalParts.dropFirst().joined(separator: " "))
+    }
+
+    private static func tokensMatch(_ a: String, _ b: String) -> Bool {
         let left = normalize(a)
         let right = normalize(b)
         guard !left.isEmpty, !right.isEmpty else { return false }
@@ -412,7 +436,7 @@ enum SpeakerNameMatcher {
         let rf = firstToken(b)
         if lf.isEmpty || rf.isEmpty { return false }
         if lf == rf { return true }
-        // "Jordan" / "Jordan" — require 4 characters so "Ann" ≠ "Anna".
+        // "Jordan" / "Jordan Hale" — require 4 characters so "Ann" ≠ "Anna".
         if lf.count >= 4, rf.hasPrefix(lf) { return true }
         if rf.count >= 4, lf.hasPrefix(rf) { return true }
         return false

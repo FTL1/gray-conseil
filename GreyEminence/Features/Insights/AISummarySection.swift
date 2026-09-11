@@ -5,6 +5,7 @@ struct AISummarySection: View {
     var onOpenWorkspace: (() -> Void)?
     var reanalyzeControl: InsightReanalyzeControl? = nil
     var onReplaceSummary: ((String) -> Void)? = nil
+    var onSuppressPoint: ((String) -> Void)? = nil
     var onResearch: ((String) -> Void)? = nil
     @Environment(\.meetingFindQuery) private var findQuery
     @State private var isExpanded = true
@@ -79,7 +80,23 @@ struct AISummarySection: View {
                         },
                         onDelete: onReplaceSummary == nil ? nil : { index in
                             var next = sections
+                            for point in next[index].points {
+                                onSuppressPoint?(MeetingReanalysis.summaryPointKey(point))
+                            }
                             next.remove(at: index)
+                            if let encoded = SummarySection.encode(next) {
+                                onReplaceSummary?(encoded)
+                            }
+                        },
+                        onDeletePoint: onReplaceSummary == nil ? nil : { sectionIndex, pointIndex in
+                            var next = sections
+                            let point = next[sectionIndex].points[pointIndex]
+                            onSuppressPoint?(MeetingReanalysis.summaryPointKey(point))
+                            next[sectionIndex].points.remove(at: pointIndex)
+                            if next[sectionIndex].points.isEmpty,
+                               (next[sectionIndex].intro?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                                next.remove(at: sectionIndex)
+                            }
                             if let encoded = SummarySection.encode(next) {
                                 onReplaceSummary?(encoded)
                             }
@@ -153,6 +170,7 @@ private struct StructuredSummaryView: View {
     @Binding var selectedSection: Int?
     var onModify: ((Int, SummarySection) -> Void)?
     var onDelete: ((Int) -> Void)?
+    var onDeletePoint: ((Int, Int) -> Void)?
     var onMove: ((IndexSet, Int) -> Void)?
     var onResearch: ((String) -> Void)?
     @State private var editingIndex: Int?
@@ -172,7 +190,13 @@ private struct StructuredSummaryView: View {
                     onDelete: onDelete == nil ? nil : { onDelete?(idx) },
                     onResearch: onResearch == nil ? nil : { onResearch?(section.title) }
                 ) {
-                    SectionCard(section: section, number: idx + 1)
+                    SectionCard(
+                        section: section,
+                        number: idx + 1,
+                        onDeletePoint: onDeletePoint == nil ? nil : { pointIndex in
+                            onDeletePoint?(idx, pointIndex)
+                        }
+                    )
                 }
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
@@ -228,6 +252,7 @@ private struct StructuredSummaryView: View {
 private struct SectionCard: View {
     let section: SummarySection
     let number: Int
+    var onDeletePoint: ((Int) -> Void)? = nil
     @Environment(\.meetingFindQuery) private var findQuery
     @State private var isExpanded = true
     @State private var isHovered = false
@@ -279,8 +304,11 @@ private struct SectionCard: View {
                                 .padding(.bottom, 6)
                         }
 
-                        ForEach(Array(section.points.enumerated()), id: \.offset) { _, point in
-                            PointRow(point: point)
+                        ForEach(Array(section.points.enumerated()), id: \.offset) { pointIndex, point in
+                            PointRow(
+                                point: point,
+                                onDelete: onDeletePoint == nil ? nil : { onDeletePoint?(pointIndex) }
+                            )
                         }
                     }
                     .padding(.bottom, 8)
@@ -313,6 +341,7 @@ private struct SectionCard: View {
 
 private struct PointRow: View {
     let point: SummaryPoint
+    var onDelete: (() -> Void)? = nil
     @Environment(\.meetingFindQuery) private var findQuery
 
     var body: some View {
@@ -332,6 +361,13 @@ private struct PointRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if let onDelete {
+                Button("Delete bullet", role: .destructive, action: onDelete)
+            }
+        }
+        .help("Right-click to delete this bullet. Reanalyze will not put it back.")
     }
 }
 

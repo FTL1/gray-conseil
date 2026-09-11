@@ -8,7 +8,7 @@ Matt’s shipping app is still named **Grey Eminence**. This copy is named **Gre
 
 A one-page list of what shipped: **Help → What's in Grey Conseil**. Every control: **Help → Controls and options**. How this fork relates to Matt’s code: GitHub docs/ORIGIN.md.
 
-Latest test build: **0.28.4-ftl51**.
+Latest test build: **0.28.4-public.1**.
 
 **New in this build:** Hover any control for what / how / why. Help → Controls and options is the full page. Help → Send feedback… files a GitHub issue as text only (screenshot off by default).
 
@@ -44,7 +44,7 @@ Latest test build: **0.28.4-ftl51**.
 
 **How to install it**
 
-1. First time: GitHub **Releases** → `GreyConseil-0.28.4-ftl51.dmg`. After that, **Check for Updates**.
+1. First time: GitHub **Releases** → `GreyConseil-0.28.4-public.1.dmg`. After that, **Check for Updates**.
 2. Open the DMG and drag **Grey Conseil** into Applications. Remove **older Notebook** or **older test builds** if those icons are still there (same library).
 3. Leave **Grey Eminence** (Matt’s) installed if you already use it.
 4. Open **Grey Conseil**. Accept the legal notice. Grant microphone, and contacts / calendar if the Mac asks.
@@ -54,7 +54,7 @@ Latest test build: **0.28.4-ftl51**.
 - Menu bar name: **Grey Conseil**
 - Help menu: **What's New in Grey Conseil**, **What's in Grey Conseil**, and **Grey Conseil extras**
 - Settings → AI includes **xAI (Grok)**
-- About / version looks like `0.28.4-ftl51`
+- About / version looks like `0.28.4-public.1`
 - **Check for Updates** is in Settings → About and the app menu
 
 **Important safety rules**
@@ -66,7 +66,7 @@ Latest test build: **0.28.4-ftl51**.
 
 **Outlook / Microsoft 365 calendar.** Settings → Calendar already has two sources: calendars synced to the Mac (including Outlook if that account is in System Settings → Internet Accounts), and **Connect Microsoft 365** for a direct Outlook/Teams feed. That Connect button stays hidden until an Entra app client ID is pasted in `GraphConfig.swift` — same as Matt’s app.
 
-Grey Conseil keeps recordings under Application Support for `com.ftl1.greyeminence`. Production stays in its own container. This build is **not sandboxed** so it will launch on macOS Tahoe. **Check for Updates** uses github.com/FTL1/grey-conseil — never Grey Eminence’s Sparkle feed.
+Grey Conseil keeps recordings under Application Support for `com.ftl1.greyeminence`. Production stays in its own container. This build is **not sandboxed** so it will launch on macOS Tahoe. **Check for Updates** uses github.com/FTL1/greyeminence — never Grey Eminence’s Sparkle feed.
 
 Needs **macOS 14.4+** and an **Apple Silicon** Mac. Ventura is out of scope.
 
@@ -415,7 +415,11 @@ If you customized prompts under **Settings → Developer → Edit AI Prompts**, 
 ### One meeting
 
 1. Open the meeting.
-2. Click **Reanalyze** at the top of Meeting Intelligence for a full rewrite (purpose-first).
+2. In **Analysis brief**, type what the call is actually for (example: agree a delivery date for the sample). Your project overview in the transcript is preamble, not the summary.
+3. Right-click any useless summary bullet, follow-up, or action item → **Delete**. Those stay gone on the next pass.
+4. Set **Focus** if the first half is just you describing the project: **Second half** or **Last 20 minutes**, then **Reanalyze this range**.
+5. Click **Reanalyze with brief** (or **Reanalyze** at the top). Long calls now extract decisions and commitments first, then write the summary.
+6. To give the back half its own meeting (own intel, own actions): in the transcript, right-click the first line of that range → **Split Into New Meeting**.
 
 The arrow on that button: **Deep**, **Deepest** (weighs louder/quieter lines measured from the saved audio — it does not invent “frustration”), **Revert to prior**, **View log**. **Re-transcribe with large-v3** is at the bottom.
 

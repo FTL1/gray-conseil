@@ -2,13 +2,21 @@
 
 A plain-language catalog of every extra This fork added on top of Matt Purdon’s Grey Eminence. This is the **what and why**. For click-by-click steps and “it broke,” open **Help → How to use Grey Conseil**.
 
-Latest test build: **0.28.4-ftl51** (`GreyConseil-0.28.4-ftl51.dmg`). After the first install, **Check for Updates**.
+Latest test build: **0.28.4-public.1** (`GreyConseil-0.28.4-public.1.dmg`). After the first install, **Check for Updates**.
 
 Matt’s app stays named **Grey Eminence**. Ours is **Grey Conseil**. They do not share a library. Map: GitHub docs/ORIGIN.md, **Help → How we differ from Grey Eminence**. Why the name: **Help → Why Grey Conseil**. Legal: **Help → Disclaimer**.
 
 **Grey Eminence** is *éminence grise* — influence without the official chair ([the phrase](https://wordhistories.net/2019/07/24/eminence-grise/)). **Grey Conseil** keeps the grey and takes **Conseil** (counsel) from Jules Verne’s servant in [*Twenty Thousand Leagues Under the Sea*](https://archive.org/details/in.ernet.dli.2015.459144). Homage, plus preferred humor.
 
-This catalog is current through **ftl51**.
+This catalog is current through **public.1**.
+
+### This build (public.1)
+
+- **Analysis brief** on Meeting Intelligence: tell it the real goal of the call, delete bad summary bullets, reanalyze. Deleted bullets / follow-ups / tasks stay gone.
+- **Focus** Reanalyze on the second half, last 20 minutes, or a custom range. Long calls use extract-then-summarize (facts first, then the write-up) so Grok does not latch onto the preamble.
+- **Split Into New Meeting** (transcript ⋯) still cuts a range into its own meeting with its own intel.
+- **People bar color** matches the header attendee chip for the same contact, including calendar initials (“JD Jane” / “Jane you”).
+- **People bar** on Record caps chips so a huge calendar invite cannot freeze the pane.
 
 ### This build (ftl51)
 
@@ -16,7 +24,7 @@ This catalog is current through **ftl51**.
 
 ### This build (ftl50)
 
-- GitHub repo is **FTL1/grey-conseil**. Check for Updates uses that feed. Bundle ID / library / Keychain / Outlook OAuth unchanged. Desktop DMG folder is **GreyConseil**.
+- GitHub repo is **FTL1/greyeminence**. Check for Updates uses that feed. Bundle ID / library / Keychain / Outlook OAuth unchanged. Desktop DMG folder is **GreyConseil**.
 
 ### This build (ftl42)
 
@@ -215,6 +223,8 @@ Jobs run **one at a time**. Interviews, live recordings, and empty transcripts a
 
 Full Reanalyze is **purpose-first** (what you were trying to do, not the calendar title). Each section has its own **Reanalyze**: click is **Deep**; the arrow adds **Deepest** (measured vocal energy from saved audio — not invented emotion), Revert, View log.
 
+**Analysis brief** on Meeting Intelligence: type what the call is for (e.g. agree a delivery date for the sample), then **Reanalyze with brief**. The summary should not be you describing the project — that is preamble. Right-click a summary bullet, follow-up, or task to delete it; reanalyze will not put it back.
+
 Click an intelligence item to select; right-click to modify / research / delete; drag to reorder. Research uses this meeting’s transcript only.
 
 ---
@@ -312,7 +322,7 @@ Auto-record stops after 4 hours, or after 20 minutes of silence on an auto-start
 | Name in the Dock | **Grey Conseil** |
 | Bundle | `com.ftl1.greyeminence` |
 | Library | Separate from Matt’s. New DMG replaces the **app**, not the meetings. |
-| Auto-update | **Check for Updates** → github.com/FTL1/grey-conseil (never Matt’s feed). |
+| Auto-update | **Check for Updates** → github.com/FTL1/greyeminence (never Matt’s feed). |
 | Tahoe | Unsandboxed so it launches (macOS 26 kills a sandboxed ad-hoc build). |
 | Ventura | Not supported. |
 

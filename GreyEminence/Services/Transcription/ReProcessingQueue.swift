@@ -476,7 +476,11 @@ final class ReProcessingQueue {
         guard !segments.isEmpty, let client = try? await AIClientFactory.makeClient() else { return }
         let service = AIIntelligenceService(
             client: client,
-            meetingID: meeting.id
+            meetingID: meeting.id,
+            suppressedActionItems: meeting.suppressedActionItems,
+            suppressedFollowUps: meeting.suppressedFollowUps,
+            suppressedSummaryPoints: meeting.suppressedSummaryPoints,
+            analysisGuidance: meeting.analysisGuidance
         )
         do {
             let roster = MeetingRoster.snapshot(for: meeting)
@@ -492,7 +496,10 @@ final class ReProcessingQueue {
                     segments: segments,
                     roster: roster,
                     screenObservations: screenBlock,
-                    calendarTitle: meeting.analysisTitleHint
+                    calendarTitle: meeting.analysisTitleHint,
+                    keptSummary: meeting.suppressedSummaryPoints.isEmpty
+                        ? ""
+                        : (meeting.latestInsight?.summary ?? "")
                 )
             }
             guard let result = finalResult else { return }

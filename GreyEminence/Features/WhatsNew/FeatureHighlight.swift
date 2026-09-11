@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "public-build-and-analysis-brief",
+            version: "0.28.4-public.1",
+            title: "Steer the write-up, matching colors",
+            summary: "Type what the call is for, focus Reanalyze on the second half, and delete bad bullets for good. Header and People-bar chips for the same person share a color. Large calendar invites no longer fill the Record pane.",
+            systemImage: "text.badge.checkmark",
+            tint: .green,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "help-hover-and-feedback",
             version: "0.28.4-ftl51",
             title: "Hover help, and Send feedback",
@@ -35,7 +44,7 @@ enum FeatureHighlightCatalog {
         FeatureHighlight(
             id: "github-repo-grey-conseil",
             version: "0.28.4-ftl50",
-            title: "Updates from FTL1/grey-conseil",
+            title: "Updates from this fork",
             summary: "Check for Updates talks to the Grey Conseil GitHub repo. The Mac identity (bundle ID and library) is unchanged, so your meetings stay put.",
             systemImage: "arrow.down.app",
             tint: .orange,

@@ -208,7 +208,7 @@ struct SpeakerActionPopover: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(speaker.color)
+                    .fill(actions.color ?? speaker.color)
                     .frame(width: 8, height: 8)
                 Text(speaker.displayName)
                     .font(.headline)
@@ -216,7 +216,7 @@ struct SpeakerActionPopover: View {
                 if let percent = actions.talkSharePercent {
                     Text("\(percent)%")
                         .font(.title3.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(speaker.color)
+                        .foregroundStyle(actions.color ?? speaker.color)
                 }
                 if let onClose {
                     Button(action: onClose) {
@@ -233,7 +233,7 @@ struct SpeakerActionPopover: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ProgressView(value: Double(percent), total: 100)
-                        .tint(speaker.color)
+                        .tint(actions.color ?? speaker.color)
                 }
             }
 

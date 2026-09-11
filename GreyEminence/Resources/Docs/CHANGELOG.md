@@ -7,13 +7,23 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.1 — 2026-09-10
+
+First public Grey Conseil build. Docs and examples use anonymous names (Jane Doe, Bob Smith). Check for Updates reads this public repository's Releases.
+
+**Analysis brief, focus window, two-pass reanalyze.** Meeting Intelligence has an **Analysis brief** (what the call is for) and **Focus** (whole meeting, second half, last 20 minutes, or a custom range). Full Reanalyze now extracts dated decisions/commitments first, then writes the summary — so Grok 4.6 does not treat your project preamble as the meeting. Right-click a summary bullet to delete it; it stays gone. **Show everyone's actions** lists other people's tasks too. **Split Into New Meeting** in the transcript still gives a range its own intel.
+
+**Mixer colors follow the attendee contact.** Header chips and People-bar chips for the same person use that contact’s color. Calendar initials (“JD Jane”, “BS Bob”) match display names (“Jane”, “Bob Smith”). A leftover dashed **speaker-1** is still an unbound voice — right-click → **This is …** to merge it.
+
+**Large invites do not freeze Record.** The People bar shows you plus a short list and **+N more**, instead of laying out every name from an 80-person calendar invite.
+
 ## 0.28.4-ftl51 — 2026-08-28
 
 **Help on every control; Send feedback.** Hover a control for a short what / how / why. **Help → Controls and options** is the full page (also `docs/CONTROL-REFERENCE.md`). **Help → Send feedback…** opens a GitHub issue as text only (pane + what you want). Screenshot is off unless you check it; the picture stays on this Mac until you attach it. Emails and phone numbers in the text are scrubbed. No transcript is attached.
 
 ## 0.28.4-ftl50 — 2026-08-28
 
-**GitHub is FTL1/grey-conseil.** Check for Updates uses that repo (old `FTL1/greyeminence` URLs redirect). Docs, Settings About/export copy, Grok plugin comments, and the Desktop DMG folder say Grey Conseil. Bundle ID, SwiftData store, Keychain, and Outlook OAuth stay `com.ftl1.greyeminence` / `com.greyeminence.app` so the library and grants stay. About copyright still names Matthew Purdon; Help still has **How we differ from Grey Eminence**.
+**GitHub is FTL1/greyeminence.** Check for Updates uses that repo (old `FTL1/greyeminence` URLs redirect). Docs, Settings About/export copy, Grok plugin comments, and the Desktop DMG folder say Grey Conseil. Bundle ID, SwiftData store, Keychain, and Outlook OAuth stay `com.ftl1.greyeminence` / `com.greyeminence.app` so the library and grants stay. About copyright still names Matthew Purdon; Help still has **How we differ from Grey Eminence**.
 
 ## 0.28.4-ftl49 — 2026-08-28
 
@@ -33,7 +43,7 @@ Grey Eminence releases.
 
 ## 0.28.4-ftl45 — 2026-08-27
 
-**Check for Updates and mic grant.** Sparkle was fetching `github.com/FTL1/grey-conseil` (that repo does not exist), so the in-app updater 404ed. Feed is `FTL1/greyeminence` again. Opening Record, or first capture after a new DMG, prompts for Microphone; a denial opens System Settings. Screen Recording / System Audio is requested on record start (ad-hoc DMGs orphan TCC).
+**Check for Updates and mic grant.** Sparkle was fetching `github.com/FTL1/greyeminence` (that repo does not exist), so the in-app updater 404ed. Feed is `FTL1/greyeminence` again. Opening Record, or first capture after a new DMG, prompts for Microphone; a denial opens System Settings. Screen Recording / System Audio is requested on record start (ad-hoc DMGs orphan TCC).
 
 ## 0.28.4-ftl44 — 2026-08-27
 
@@ -47,7 +57,7 @@ Grey Eminence releases.
 - **Zip** still packs markdown plus optional audio, stills, and a screen-share time-lapse.
 - **One PDF** concatenates the set; each meeting starts on a new page.
 - **One PDF per meeting** writes a file per meeting into a folder you choose.
-- GitHub repo is **FTL1/grey-conseil**. Bundle ID is still `com.ftl1.greyeminence`. Check for Updates uses that repo. Copyright names Matthew Purdon; Unofficial Grey Conseil portions under the same license.
+- GitHub repo is **FTL1/greyeminence**. Bundle ID is still `com.ftl1.greyeminence`. Check for Updates uses that repo. Copyright names Matthew Purdon; Unofficial Grey Conseil portions under the same license.
 
 ## 0.28.4-ftl42 — 2026-08-26
 

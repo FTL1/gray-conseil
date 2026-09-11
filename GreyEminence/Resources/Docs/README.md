@@ -3,7 +3,7 @@
 > **testers:** this is Matt’s original Read Me. You are in **Grey Conseil**,
 > an unofficial fork. **Help → What's in Grey Conseil**, **How to use**,
 > **How we differ**, **Disclaimer**. Latest: **0.28.4-ftl40**.
-> Check for Updates uses github.com/FTL1/grey-conseil, not Grey Eminence.
+> Check for Updates uses github.com/FTL1/greyeminence, not Grey Eminence.
 
 Native macOS meeting recording, transcription, and interview-scoring app.
 

@@ -35,16 +35,7 @@ enum MeetingReanalysis {
         depth: InsightDepth = .standard
     ) async throws {
         guard meeting.status != .recording else { throw Failure.recording }
-        let snapshots: [SegmentSnapshot] = meeting.segments
-            .sorted { $0.startTime < $1.startTime }
-            .map {
-                SegmentSnapshot(
-                    speaker: $0.speaker,
-                    text: $0.text,
-                    formattedTimestamp: $0.formattedTimestamp,
-                    isFinal: $0.isFinal
-                )
-            }
+        let snapshots = focusedSnapshots(in: meeting)
         guard !snapshots.isEmpty else { throw Failure.noTranscript }
 
         meeting.isAnalyzing = true
@@ -63,7 +54,9 @@ enum MeetingReanalysis {
             client: client,
             meetingID: meeting.id,
             suppressedActionItems: meeting.suppressedActionItems,
-            suppressedFollowUps: meeting.suppressedFollowUps
+            suppressedFollowUps: meeting.suppressedFollowUps,
+            suppressedSummaryPoints: meeting.suppressedSummaryPoints,
+            analysisGuidance: meeting.analysisGuidance
         )
         let roster = MeetingRoster.snapshot(for: meeting)
         let screenBlock = ScreenObservationFormatter.finalBlock(for: meeting)
@@ -75,15 +68,20 @@ enum MeetingReanalysis {
         }
 
         let maybeResult: AnalysisResult?
-        if depth == .standard && scope == .full {
-            maybeResult = try await AIUsageContext.attribute(.reanalysis, meetingID: meeting.id) {
-                try await service.reanalyze(
-                    segments: snapshots,
-                    roster: roster,
-                    screenObservations: screenBlock,
-                    calendarTitle: meeting.analysisTitleHint
-                )
-            }
+        let keptSummary = meeting.suppressedSummaryPoints.isEmpty
+            ? ""
+            : (previous?.summary ?? "")
+        let windowLabel = focusLabel(for: meeting, snapshots: snapshots)
+        if scope == .full, depth != .deepest {
+            maybeResult = try await twoPassReanalyze(
+                service: service,
+                snapshots: snapshots,
+                roster: roster,
+                screenBlock: screenBlock,
+                meeting: meeting,
+                keptSummary: keptSummary,
+                windowLabel: windowLabel
+            )
         } else {
             maybeResult = try await AIUsageContext.attribute(.reanalysis, meetingID: meeting.id) {
                 try await service.analyzeSection(
@@ -107,7 +105,7 @@ enum MeetingReanalysis {
         let suppressedQuestions = Set(meeting.suppressedFollowUps)
         let parsed = AnalysisResult(
             title: rawResult.title,
-            summary: rawResult.summary,
+            summary: strippingSuppressedSummary(rawResult.summary, keys: meeting.suppressedSummaryPoints),
             actionItems: rawResult.actionItems.filter { !suppressedActions.contains(normalizeKey($0.text)) },
             followUps: rawResult.followUps.filter { !suppressedQuestions.contains(normalizeKey($0)) },
             topics: rawResult.topics,
@@ -227,6 +225,131 @@ enum MeetingReanalysis {
             topics: (scope == .topics && !parsed.topics.isEmpty) ? parsed.topics : previous.topics,
             rawResponse: parsed.rawResponse
         )
+    }
+
+    static func focusedSnapshots(in meeting: Meeting) -> [SegmentSnapshot] {
+        let start = meeting.analysisFocusStart ?? 0
+        let end = meeting.analysisFocusEnd ?? TimeInterval.greatestFiniteMagnitude
+        return meeting.segments
+            .sorted { $0.startTime < $1.startTime }
+            .filter { $0.startTime >= start && $0.startTime < end }
+            .map {
+                SegmentSnapshot(
+                    speaker: $0.speaker,
+                    text: $0.text,
+                    formattedTimestamp: $0.formattedTimestamp,
+                    isFinal: $0.isFinal,
+                    startTime: $0.startTime
+                )
+            }
+    }
+
+    static func focusLabel(for meeting: Meeting, snapshots: [SegmentSnapshot]) -> String {
+        let start = meeting.analysisFocusStart ?? snapshots.first?.startTime ?? 0
+        let end = meeting.analysisFocusEnd ?? snapshots.last?.startTime ?? meeting.duration
+        if meeting.analysisFocusStart == nil, meeting.analysisFocusEnd == nil {
+            return "the full meeting (\(clock(start))–\(clock(end)))"
+        }
+        return "the focused window \(clock(start))–\(clock(end))"
+    }
+
+    static func clock(_ time: TimeInterval) -> String {
+        let total = max(0, Int(time.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    static func parseClock(_ raw: String) -> TimeInterval? {
+        let parts = raw.split(separator: ":").compactMap { Int($0) }
+        guard !parts.isEmpty, parts.count <= 3 else { return nil }
+        if parts.count == 1 { return TimeInterval(parts[0]) }
+        if parts.count == 2 { return TimeInterval(parts[0] * 60 + parts[1]) }
+        return TimeInterval(parts[0] * 3600 + parts[1] * 60 + parts[2])
+    }
+
+    /// ~20-minute chunks with overlap so a long call is not one giant prompt.
+    static func chunkSnapshots(
+        _ snapshots: [SegmentSnapshot],
+        maxSpan: TimeInterval = 20 * 60,
+        overlap: TimeInterval = 90
+    ) -> [[SegmentSnapshot]] {
+        guard let first = snapshots.first, let last = snapshots.last else { return [] }
+        let span = last.startTime - first.startTime
+        if span <= maxSpan + 60 { return [snapshots] }
+        var chunks: [[SegmentSnapshot]] = []
+        var cursor = first.startTime
+        while cursor <= last.startTime {
+            let windowEnd = cursor + maxSpan
+            let chunk = snapshots.filter { $0.startTime >= cursor && $0.startTime < windowEnd }
+            if !chunk.isEmpty { chunks.append(chunk) }
+            cursor = windowEnd - overlap
+            if chunks.count > 12 { break }
+        }
+        return chunks.isEmpty ? [snapshots] : chunks
+    }
+
+    private static func twoPassReanalyze(
+        service: AIIntelligenceService,
+        snapshots: [SegmentSnapshot],
+        roster: MeetingRoster,
+        screenBlock: String?,
+        meeting: Meeting,
+        keptSummary: String,
+        windowLabel: String
+    ) async throws -> AnalysisResult? {
+        let chunks = chunkSnapshots(snapshots)
+        var extracts: [String] = []
+        for (index, chunk) in chunks.enumerated() {
+            let label = chunks.count == 1
+                ? windowLabel
+                : "\(windowLabel) chunk \(index + 1)/\(chunks.count)"
+            let extract = try await service.extractFacts(
+                segments: chunk,
+                windowLabel: label
+            )
+            extracts.append("### \(label)\n\(extract)")
+        }
+        let combined = extracts.joined(separator: "\n\n")
+        if let synthesized = try await service.synthesizeFromExtract(
+            extract: combined,
+            windowLabel: windowLabel,
+            calendarTitle: meeting.analysisTitleHint,
+            roster: roster,
+            keptSummary: keptSummary,
+            screenObservations: screenBlock
+        ) {
+            return synthesized
+        }
+        return try await service.reanalyze(
+            segments: snapshots,
+            roster: roster,
+            screenObservations: screenBlock,
+            calendarTitle: meeting.analysisTitleHint,
+            keptSummary: keptSummary
+        )
+    }
+
+    static func summaryPointKey(_ point: SummaryPoint) -> String {
+        normalizeKey("\(point.label) \(point.detail)")
+    }
+
+    static func strippingSuppressedSummary(_ raw: String, keys: [String]) -> String {
+        guard !keys.isEmpty, let sections = SummarySection.parse(raw) else { return raw }
+        let banned = Set(keys)
+        let next = sections.compactMap { section -> SummarySection? in
+            var copy = section
+            copy.points = copy.points.filter { !banned.contains(summaryPointKey($0)) }
+            if copy.points.isEmpty, (copy.intro?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                return nil
+            }
+            return copy
+        }
+        return SummarySection.encode(next) ?? raw
     }
 
     static func normalizeKey(_ text: String) -> String {

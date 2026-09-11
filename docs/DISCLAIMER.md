@@ -16,7 +16,7 @@
 
 **It is up to you** to know those rules and to follow them. Shipping this app does not grant permission to record anyone, and does not mean a given recording is lawful.
 
-**Updates.** Check for Updates talks to **github.com/FTL1/grey-conseil**, not to Grey Eminence’s Sparkle feed. Installing an update replaces this unofficial build only.
+**Updates.** Check for Updates talks to **github.com/FTL1/greyeminence**, not to Grey Eminence’s Sparkle feed. Installing an update replaces this unofficial build only.
 
 **License.** Matt’s original code remains under the MIT License (see LICENSE). This disclaimer is additional notice for the Grey Conseil distribution; it does not remove MIT permissions on the upstream code.
 

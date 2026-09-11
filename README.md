@@ -16,7 +16,7 @@ Unofficial fork of [Matt Purdon’s Grey Eminence](https://github.com/mpurdon/gr
 
 Inside the app: **Help → What's in Grey Conseil**, **How to use**, **Controls and options**, **Why Grey Conseil**, **How we differ**, **Disclaimer**, **Send feedback…**.
 
-Latest build: **0.28.4-ftl51**. After the first install, **Check for Updates** (Settings → About, or the app menu) fetches [FTL1/grey-conseil releases](https://github.com/FTL1/grey-conseil/releases) — not Grey Eminence’s Sparkle feed. Hover any control for what / how / why; **Help → Controls and options** is the full page.
+Latest build: **0.28.4-public.1**. After the first install, **Check for Updates** (Settings → About, or the app menu) fetches [this repository's releases](https://github.com/FTL1/greyeminence/releases) — not Grey Eminence’s Sparkle feed. Hover any control for what / how / why; **Help → Controls and options** is the full page.
 
 ---
 
@@ -52,7 +52,7 @@ Matt already built all of that. This fork's job was to make speakers usable, add
 | Meetings list | By date only | **Date**, **Series**, or **Related** (Exec series in one bucket) |
 | Topic map | Topics only | Topics **plus** people, speakers, and action items |
 | Latest *his* release | **v0.30.1** on `main` | We **ported** 0.29.1–0.30.1; we did not merge `main` |
-| Latest *our* DMG | — | **0.28.4-ftl51** (the `0.28.4` is the fork point, not “behind”) |
+| Latest *our* DMG | — | **0.28.4-public.1** (the `0.28.4` is the fork point, not “behind”) |
 | Tahoe (macOS 26) | Sandboxed production build | **Unsandboxed** so it actually launches |
 | Ventura | Requested, not done here | **Not supported** |
 
@@ -72,7 +72,7 @@ The long story, including what we took and what we left: [docs/ORIGIN.md](docs/O
 
 You need a Mac with **Apple Silicon** (M1 or later) and **macOS 14.4 or newer**. Ventura will not work.
 
-1. First time: GitHub **Releases** → `GreyConseil-0.28.4-ftl51.dmg`. After that, **Check for Updates** in the app.
+1. First time: GitHub **Releases** → `GreyConseil-0.28.4-public.1.dmg`. After that, **Check for Updates** in the app.
 2. Open the DMG. Drag **Grey Conseil** into Applications. Remove **older test builds** if it is still there (same library).
 3. Leave **Grey Eminence** (Matt’s) installed if you already use it.
 4. Open **Grey Conseil**. Accept the legal notice. Grant **microphone**. Grant **contacts** and **calendar** if the Mac asks.
@@ -275,7 +275,7 @@ If someone asks you to “just symlink the store” or “open the production fi
 
 This repo is updated (**0.28.4-ftl40**). **Do not send him this whole branch.** It includes test-only packaging (name, bundle ID, unsandboxed, no Sparkle) that must stay in the fork.
 
-How the two trees relate: [docs/ORIGIN.md](docs/ORIGIN.md). Ask him if he wants **small, separate PRs** from `FTL1/grey-conseil` into `mpurdon/greyeminence`, one theme at a time. Draft: [docs/MATT-PULL-NOTES.md](docs/MATT-PULL-NOTES.md). How we stay current with *his* releases: [docs/UPSTREAM.md](docs/UPSTREAM.md).
+How the two trees relate: [docs/ORIGIN.md](docs/ORIGIN.md). Ask him if he wants **small, separate PRs** from `FTL1/greyeminence` into `mpurdon/greyeminence`, one theme at a time. Draft: [docs/MATT-PULL-NOTES.md](docs/MATT-PULL-NOTES.md). How we stay current with *his* releases: [docs/UPSTREAM.md](docs/UPSTREAM.md).
 
 Suggested order, after he agrees:
 
@@ -316,7 +316,7 @@ More detail: [docs/USER-GUIDE.md](docs/USER-GUIDE.md#17-if-something-looks-empty
 
 You can skip this entire section if you only use the DMG.
 
-- Clone: `https://github.com/FTL1/grey-conseil`
+- Clone: `https://github.com/FTL1/greyeminence`
 - Working branch for fork features: `feature/speaker-session-rename`
 - Build a test DMG: GitHub Actions → **Build test DMG** → Run workflow on that branch
 - Do **not** regenerate Matt’s `project.yml` over the hand-maintained `GreyEminence.xcodeproj` unless you know you need to — fork files were added to the pbxproj directly

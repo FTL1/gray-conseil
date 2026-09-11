@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import Grey_Eminence
 
 final class SpeakerPaletteTests: XCTestCase {
@@ -57,5 +58,31 @@ final class SpeakerPaletteTests: XCTestCase {
 
     func testHashSlotIsStable() {
         XCTAssertEqual(SpeakerPalette.hashSlot(for: "Jordan Hale"), SpeakerPalette.hashSlot(for: "jordan hale"))
+    }
+
+    func testColorFollowsContactIDNotDisplayName() {
+        let jane = Contact(name: "JD Jane")
+        jane.colorSlot = 1
+        let color = SpeakerPalette.color(
+            for: .meNamed("Jane"),
+            contactID: jane.id,
+            contacts: [jane]
+        )
+        XCTAssertEqual(color, SpeakerPalette.color(slot: 1))
+        XCTAssertEqual(
+            SpeakerPalette.contact(for: .meNamed("Jane"), contactID: jane.id, in: [jane])?.id,
+            jane.id
+        )
+    }
+
+    func testMeMatchesCalendarInitialsContact() {
+        let jane = Contact(name: "JD Jane")
+        jane.colorSlot = 1
+        let found = SpeakerPalette.contact(for: .meNamed("Jane"), in: [jane])
+        XCTAssertEqual(found?.id, jane.id)
+        XCTAssertEqual(
+            SpeakerPalette.color(for: .meNamed("Jane"), contacts: [jane]),
+            SpeakerPalette.color(slot: 1)
+        )
     }
 }

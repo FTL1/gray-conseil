@@ -60,7 +60,7 @@ Same Watch switch: **Settings → General**.
 | **+** | Pre-add a person. | Type a name or pick a contact. | Invitees you expect. Still starts as speaker-1 until you assign. |
 | **Show all** | Unhide everyone. | One click. | After you hid people to read one voice. |
 
-Calendar **Alex Morgan** and Me **Alex you** are the same chip.
+Calendar **Alex Morgan** and Me **Alex you** are the same chip — same contact, same color as the header attendee. Initials labels (“JD Jane”) match the display name (“Jane”).
 
 ---
 
@@ -99,7 +99,12 @@ Calendar **Alex Morgan** and Me **Alex you** are the same chip.
 | **Upgrade to large-v3** | Better transcript. | WhisperKit large-v3 in the background. First run ~1.5 GB download. | Live capture uses a fast model. |
 | **Index for search** | Ask index. | If Ask cannot see this meeting. | Recovery when the post-record index failed. |
 | Export / dossier | Stored intel out. | Click last format; arrow for dossier / series / one-pagers. | Chatbot pack of **stored** facts — no hallucination. |
-| Attendees row | Invitees. | From the linked calendar event. | People bar seats. |
+| **Analysis brief** | Your goal for this call. | Type it on Meeting Intelligence, then **Reanalyze with brief**. | So the summary is progress toward that goal, not your project preamble. |
+| **Focus** | Which part of the call to analyze. | Whole meeting, second half, last 20 minutes, or a custom range. | Opening preamble is not the meeting. |
+| **Split Into New Meeting** | Cut the transcript into two meetings. | Transcript ⋯ on a line, or right-click. Each half gets its own intel. | Two calls recorded as one. |
+| Delete summary bullet | Drop a bad point. | Right-click the bullet → Delete. | Reanalyze will not put it back. Same idea as deleting a follow-up or task. |
+| **Show everyone's actions** | Other people's tasks too. | Checkbox above Action Items. | Default list is yours + unowned. |
+| Attendees row | Invitees. | From the linked calendar event. | Same contact — and color — as the People bar. |
 
 ---
 
@@ -147,7 +152,7 @@ Calendar **Alex Morgan** and Me **Alex you** are the same chip.
 | **Watch for meetings** | Same as the capture bar. | See above. | One switch, two places. |
 | **Auto-delete audio** | Retention. | Audio files only; transcripts stay. Sweep at launch. | Disk. |
 | **Stalled threshold** | Task age flag. | Default 7 days. | Orange group in Tasks. |
-| **Check for Updates** | Sparkle. | **FTL1/grey-conseil** only. Never Grey Eminence’s feed. | This fork’s DMGs. |
+| **Check for Updates** | Sparkle. | **FTL1/greyeminence** only. Never Grey Eminence’s feed. | This fork’s DMGs. |
 
 ---
 

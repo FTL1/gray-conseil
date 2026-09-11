@@ -4,7 +4,7 @@ This is the thorough map. Short version: GitHub docs/ORIGIN.md. Catalog: Help â†
 
 **Matt** ships **Grey Eminence** from `mpurdon/greyeminence` `main` (latest **v0.30.1**). Sparkle, sandboxed, production library.
 
-**We** ship **Grey Conseil** (formerly older test builds) from `FTL1/grey-conseil` branch `feature/speaker-session-rename` (latest **0.28.4-ftl51**). Unofficial fork. Isolated library. Updates from *this* repo, never from his feed.
+**We** ship **Grey Conseil** (formerly older test builds) from `FTL1/greyeminence` branch `feature/grey-conseil` (latest **0.28.4-public.1**). Unofficial fork. Isolated library. Updates from *this* repo, never from his feed.
 
 Shared ancestor: his **v0.28.4** (13 Aug 2026). Since then he added 5 commits; we added 80+. About **77 files exist only here**, **2 only on his main** (his PDF export sheet), **~92 files both edited**.
 

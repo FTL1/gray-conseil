@@ -47,22 +47,58 @@ final class SpeakerRoster {
         seats.first { $0.id == paintSeatID }
     }
 
-    func ensureMe(named name: String?) {
+    func ensureMe(named name: String?, contactID: UUID? = nil) {
         if let index = seats.firstIndex(where: \.isMe) {
             if let name, !name.isEmpty { seats[index].name = name }
+            if seats[index].contactID == nil { seats[index].contactID = contactID }
             return
         }
         seats.insert(
             Seat(
                 id: UUID(),
                 name: name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "Me",
-                contactID: nil,
+                contactID: contactID,
                 isMe: true,
                 isLocked: true,
                 boundSpeakers: [.me]
             ),
             at: 0
         )
+    }
+
+    /// Mixer chips take their color from `Seat.contactID`. Prefer the
+    /// meeting's attendee row (header chips) so "JD Jane" and Me "Jane you"
+    /// paint the same swatch even when My Profile is a different Contact.
+    func attachContacts(attendees: [Contact], myContactID: UUID?, meNames: [String]) {
+        var used = Set(seats.compactMap(\.contactID))
+
+        if let index = seats.firstIndex(where: \.isMe) {
+            let names = (meNames + [seats[index].name])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if let attendee = attendees.first(where: { contact in
+                names.contains { contact.matchesSpeakerName($0) }
+            }) {
+                seats[index].contactID = attendee.id
+                used.insert(attendee.id)
+            } else if let myContactID {
+                seats[index].contactID = myContactID
+                used.insert(myContactID)
+            }
+        }
+
+        for index in seats.indices where !seats[index].isMe {
+            if let existing = seats[index].contactID {
+                used.insert(existing)
+                continue
+            }
+            if let contact = attendees.first(where: {
+                !used.contains($0.id) && $0.matchesSpeakerName(seats[index].name)
+            }) {
+                seats[index].contactID = contact.id
+                used.insert(contact.id)
+            }
+        }
     }
 
     func seed(attendeeNames: [String], meName: String?) {
@@ -502,9 +538,37 @@ final class SpeakerRoster {
         return unique
     }
 
+    /// Mixer chips to draw. Me first, then everyone else, hard-capped so an
+    /// all-hands calendar invite cannot layout 80+ capsules and freeze the
+    /// record pane. Extra people stay on the roster for matching; they appear
+    /// as chips when they talk (or via +).
+    static let mixerChipCap = 12
+
+    func mixerSeats(in segments: [TranscriptSegment], cap: Int = mixerChipCap) -> (shown: [Seat], hidden: Int) {
+        let all = spokenSeats(in: segments)
+        if all.count <= cap { return (all, 0) }
+        let me = all.filter(\.isMe)
+        let others = all.filter { !$0.isMe }
+        let shown = Array((me + others).prefix(cap))
+        return (shown, all.count - shown.count)
+    }
+
+    /// Drop calendar-seeded guests, keep Me. Used when the user clears the
+    /// linked event so a 88-person invite does not stay painted on idle.
+    func resetExpectedAttendees() {
+        seats.removeAll { !$0.isMe }
+        hiddenSpeakers.removeAll { !$0.isMe }
+        if let isolated = isolatedSpeaker, !isolated.isMe {
+            isolatedSpeaker = nil
+        }
+        paintSeatID = nil
+        bumpMixer()
+    }
+
     func samePersonSeats(_ a: Seat, _ b: Seat) -> Bool {
         if a.id == b.id { return true }
         if a.isMe && b.isMe { return true }
+        if let aid = a.contactID, let bid = b.contactID, aid == bid { return true }
         if Self.namesAreSamePerson(a.name, b.name) { return true }
         if a.binds(b.speaker) || b.binds(a.speaker) { return true }
         return false

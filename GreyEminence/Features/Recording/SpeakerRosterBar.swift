@@ -27,14 +27,27 @@ struct SpeakerRosterBar: View {
         roster.spokenSeats(in: segments)
     }
 
+    private var mixerLayout: (shown: [SpeakerRoster.Seat], hidden: Int) {
+        roster.mixerSeats(in: segments)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             FlowLayout(spacing: 6, rowAlignment: .center) {
-                ForEach(spokenSeats) { seat in
+                ForEach(mixerLayout.shown) { seat in
                     seatChip(seat)
                 }
-                ForEach(heard, id: \.identityKey) { voice in
+                ForEach(Array(heard.prefix(8)), id: \.identityKey) { voice in
                     heardChip(voice)
+                }
+                if mixerLayout.hidden > 0 {
+                    Text("+\(mixerLayout.hidden) more")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.06), in: Capsule())
+                        .help("\(mixerLayout.hidden) other people from the invite. They show up here when they talk. Use + to pre-tag someone.")
                 }
                 addPersonButton
                 if !roster.hiddenSpeakers.isEmpty || roster.isolatedSpeaker != nil {
@@ -86,7 +99,12 @@ struct SpeakerRosterBar: View {
     }
 
     private func color(for speaker: Speaker) -> Color {
-        SpeakerPalette.color(for: speaker, contacts: Array(contacts))
+        let contactID = roster.seat(matching: speaker)?.contactID
+        return SpeakerPalette.color(for: speaker, contactID: contactID, contacts: Array(contacts))
+    }
+
+    private func color(for seat: SpeakerRoster.Seat) -> Color {
+        SpeakerPalette.color(for: seat.speaker, contactID: seat.contactID, contacts: Array(contacts))
     }
 
     private func seatChip(_ seat: SpeakerRoster.Seat) -> some View {
@@ -95,7 +113,7 @@ struct SpeakerRosterBar: View {
         let spoken = isolationTarget != nil || segments.contains { seat.binds($0.speaker) }
         let hidden = roster.isSeatHidden(seat, in: segments)
         let percent = roster.talkSharePercent(for: seat, percents: talkShareByKey, in: segments)
-        let color = color(for: seat.speaker)
+        let color = color(for: seat)
         let on = spoken && !hidden
 
         return HStack(spacing: 0) {
@@ -168,7 +186,6 @@ struct SpeakerRosterBar: View {
         let hidden = roster.isHidden(voice)
         let namedSeats = roster.seats.filter { !$0.isMe }
         let percent = talkShareByKey[voice.identityKey]
-        let color = color(for: voice)
         return HStack(spacing: 0) {
             Button {
                 roster.toggleHidden(voice)

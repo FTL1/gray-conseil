@@ -1,13 +1,13 @@
 # Staying current with Matt without killing fork work
 
-Matt’s repo is `mpurdon/greyeminence`. Ours is `FTL1/grey-conseil`. They will keep diverging. The rule is: **fetch often, merge never, port by theme.**
+Matt’s repo is `mpurdon/greyeminence`. Ours is `FTL1/greyeminence`. They will keep diverging. The rule is: **fetch often, merge never, port by theme.**
 
 Plain-language map of the two trees (what we forked, what we ported, why version numbers look “behind”): [ORIGIN.md](ORIGIN.md).
 
 ## Remotes (this machine)
 
 ```
-origin    git@github.com:FTL1/grey-conseil.git     (fetch + push)
+origin    git@github.com:FTL1/greyeminence.git     (fetch + push)
 upstream  git@github.com:mpurdon/greyeminence.git  (fetch only; push is DISABLE)
 ```
 
@@ -72,6 +72,6 @@ That keeps the broken intermediate off testers.
 
 - App name **Grey Conseil**, bundle `com.ftl1.greyeminence`
 - Isolated store, unsandboxed Tahoe
-- Sparkle feed on **FTL1/grey-conseil** (never Matt’s)
+- Sparkle feed on **FTL1/greyeminence** (never Matt’s)
 - `.github/workflows/grey-conseil-dmg.yml`
 - Help → What's in Grey Conseil / Disclaimer / How we differ

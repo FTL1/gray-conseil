@@ -363,8 +363,17 @@ struct LiveTranscriptView: View {
 
     private func actions(for speaker: Speaker, anchorID: UUID? = nil) -> SpeakerBadgeActions {
         let isMenuSpeaker = menuSpeaker?.matchesIdentity(speaker) == true
+        let contactID = roster?.seat(matching: speaker)?.contactID
+        let paletteContact = SpeakerPalette.contact(
+            for: speaker,
+            contactID: contactID,
+            in: Array(contacts)
+        )
         return SpeakerBadgeActions(
             talkSharePercent: SpeakerTalkShare.percent(for: speaker, in: segments),
+            color: SpeakerPalette.color(for: speaker, contactID: contactID, contacts: Array(contacts)),
+            colorSlot: paletteContact?.colorSlot,
+            isColorLocked: paletteContact?.isColorLocked ?? false,
             isHidden: (roster?.isHidden(speaker) ?? hiddenSpeakers.contains(where: { $0.matchesIdentity(speaker) })),
             onToggleHidden: { toggleHidden(speaker) },
             onRename: onRenameSpeaker.map { callback in

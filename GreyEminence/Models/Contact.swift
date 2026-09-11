@@ -85,7 +85,19 @@ final class Contact {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         if self.name.compare(trimmed, options: .caseInsensitive) == .orderedSame { return true }
-        return speakerAliases.contains { $0.compare(trimmed, options: .caseInsensitive) == .orderedSame }
+        if speakerAliases.contains(where: {
+            $0.compare(trimmed, options: .caseInsensitive) == .orderedSame
+        }) {
+            return true
+        }
+        if SpeakerNameMatcher.samePerson(self.name, trimmed) { return true }
+        if speakerAliases.contains(where: { SpeakerNameMatcher.samePerson($0, trimmed) }) {
+            return true
+        }
+        if let nickname, !nickname.isEmpty, SpeakerNameMatcher.samePerson(nickname, trimmed) {
+            return true
+        }
+        return false
     }
 
     var firstName: String {

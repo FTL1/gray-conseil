@@ -8,7 +8,7 @@ QA later, then send the note at the bottom.
 
 ## Why not send the whole branch
 
-`feature/speaker-session-rename` on [FTL1/grey-conseil](https://github.com/FTL1/grey-conseil) is a **test kitchen**, not a clean upstream PR.
+`feature/speaker-session-rename` on [FTL1/greyeminence](https://github.com/FTL1/greyeminence) is a **test kitchen**, not a clean upstream PR.
 
 It includes things Matt must not ship as Grey Eminence:
 
@@ -74,7 +74,7 @@ Separate PRs, later:
 
 ## What “updated GitHub” means today
 
-- Repo: `FTL1/grey-conseil`
+- Repo: `FTL1/greyeminence`
 - Branch: `feature/speaker-session-rename`
 - Latest test DMG: **0.28.4-ftl40** (Grey Conseil)
 - Docs: root [README.md](../README.md), [FEATURES.md](FEATURES.md), [USER-GUIDE.md](USER-GUIDE.md), [ORIGIN.md](ORIGIN.md)
@@ -97,7 +97,7 @@ He can browse the fork. He should **not** be asked to merge that branch.
 
 Hey Matt —
 
-We've been running a side-by-side fork at FTL1/grey-conseil so we could try a few things without touching production. Separate app name, separate library, no auto-update — testers keep Grey Eminence installed as-is.
+We've been running a side-by-side fork at FTL1/greyeminence so we could try a few things without touching production. Separate app name, separate library, no auto-update — testers keep Grey Eminence installed as-is.
 
 A few pieces map to issues you already have open, and they're working well enough here that I'd like to offer them as small PRs. I would **not** send the whole fork branch — that branch also has test-only packaging that should stay in the fork.
 

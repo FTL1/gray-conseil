@@ -4,6 +4,59 @@ import SwiftData
 
 @MainActor
 final class MeetingReanalysisTests: XCTestCase {
+    func testParseClockAndFocusFilter() {
+        XCTAssertEqual(MeetingReanalysis.parseClock("1:30"), 90)
+        XCTAssertEqual(MeetingReanalysis.parseClock("1:02:03"), 3723)
+        XCTAssertEqual(MeetingReanalysis.clock(90), "1:30")
+        let container = try! ModelContainer(
+            for: Meeting.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let meeting = Meeting(title: "Call")
+        container.mainContext.insert(meeting)
+        let early = TranscriptSegment(speaker: .me, text: "overview", startTime: 10, endTime: 20, isFinal: true)
+        let late = TranscriptSegment(speaker: .me, text: "price", startTime: 400, endTime: 420, isFinal: true)
+        early.meeting = meeting
+        late.meeting = meeting
+        meeting.segments.append(contentsOf: [early, late])
+        meeting.analysisFocusStart = 300
+        let focused = MeetingReanalysis.focusedSnapshots(in: meeting)
+        XCTAssertEqual(focused.map(\.text), ["price"])
+        let chunks = MeetingReanalysis.chunkSnapshots(focused, maxSpan: 60)
+        XCTAssertEqual(chunks.count, 1)
+    }
+
+    func testExtractFactsPromptAsksForCommitmentsNotOverview() {
+        let prompt = AIPromptTemplates.extractFactsPrompt(
+            transcript: "UNIQUE_WINDOW",
+            windowLabel: "the focused window 20:00–40:00",
+            analysisGuidance: "Agree a delivery date."
+        )
+        XCTAssertTrue(prompt.contains("UNIQUE_WINDOW"))
+        XCTAssertTrue(prompt.contains("commitments"))
+        XCTAssertTrue(prompt.contains("Agree a delivery date."))
+        XCTAssertFalse(prompt.lowercased().contains("json array of section objects"))
+    }
+
+    func testStrippingSuppressedSummaryDropsMatchingBullets() {
+        let sections = [
+            SummarySection(
+                title: "Background",
+                intro: nil,
+                points: [
+                    SummaryPoint(label: "Project overview", detail: "I described the whole project plan."),
+                    SummaryPoint(label: "Scan quote", detail: "They can ship the sample this week."),
+                ]
+            )
+        ]
+        let raw = SummarySection.encode(sections)!
+        let drop = MeetingReanalysis.summaryPointKey(sections[0].points[0])
+        let stripped = MeetingReanalysis.strippingSuppressedSummary(raw, keys: [drop])
+        let parsed = SummarySection.parse(stripped)!
+        XCTAssertEqual(parsed.count, 1)
+        XCTAssertEqual(parsed[0].points.map(\.label), ["Scan quote"])
+    }
+
     func testNormalizeKeyCollapsesWhitespaceAndStripsTrailingPunctuation() {
         XCTAssertEqual(MeetingReanalysis.normalizeKey("  Hello,  World! "), "hello, world")
         XCTAssertEqual(MeetingReanalysis.normalizeKey("Follow-up?"), "follow-up")
@@ -15,7 +68,7 @@ final class MeetingReanalysisTests: XCTestCase {
         let failure = MeetingReanalysisQueue.Failure(
             id: UUID(),
             meetingID: meetingID,
-            title: "Grey Conseil - vendor sync up",
+            title: "Gray Conseil - vendor sync up",
             date: Date(timeIntervalSince1970: 1_750_000_000),
             message: "The request timed out."
         )

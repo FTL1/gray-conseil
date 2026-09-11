@@ -28,6 +28,7 @@ struct MeetingIntelligenceView: View {
     @AppStorage("intelExportTranscript") private var includeTranscript = false
     @AppStorage("intelExportDedupe") private var dedupeTranscript = true
     @AppStorage("intelExportFormat") private var intelExportFormat = IntelligenceExportFormat.pdf.rawValue
+    @AppStorage("intelShowAllActions") private var showAllActions = false
     @Query(sort: \Meeting.date, order: .reverse) private var library: [Meeting]
     @State private var showDossierSheet = false
     @State private var dossierRequest = DossierRequest()
@@ -186,6 +187,22 @@ struct MeetingIntelligenceView: View {
                         .help("AI purpose title. The list still shows the calendar event name while this meeting is linked.")
                 }
 
+                AnalysisBriefEditor(
+                    text: $meeting.analysisGuidance,
+                    canReanalyze: meeting.status == .completed && !meeting.segments.isEmpty && !isThisMeetingBusy,
+                    onSave: { saveInsight("analysisGuidance") },
+                    onReanalyze: { runInsight(scope: .full, depth: .standard) }
+                )
+                .padding(.horizontal)
+
+                AnalysisFocusEditor(
+                    meeting: meeting,
+                    canReanalyze: meeting.status == .completed && !meeting.segments.isEmpty && !isThisMeetingBusy,
+                    onSave: { saveInsight("analysisFocus") },
+                    onReanalyze: { runInsight(scope: .full, depth: .standard) }
+                )
+                .padding(.horizontal)
+
                 if let error = exportError ?? meeting.analysisError {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -240,8 +257,18 @@ struct MeetingIntelligenceView: View {
                             researchItem = ResearchItem(title: "Follow-up", text: text)
                         }
                     )
+                    Toggle("Show everyone's actions", isOn: $showAllActions)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                        .padding(.horizontal)
+                        .help("Meeting Intelligence hides other people's tasks by default. Turn this on to see every commitment stored for this meeting.")
                     ActionItemsSection(
-                        items: meeting.paneActionItems(),
+                        items: showAllActions ? meeting.actionItems.sorted { lhs, rhs in
+                            let left = lhs.sortIndex ?? Int.max
+                            let right = rhs.sortIndex ?? Int.max
+                            if left != right { return left < right }
+                            return lhs.createdAt < rhs.createdAt
+                        } : meeting.paneActionItems(),
                         onOpenWorkspace: { onSelectDestination?(.tasks) },
                         reanalyzeControl: sectionControl(.actionItems),
                         onDelete: { item in
@@ -277,6 +304,12 @@ struct MeetingIntelligenceView: View {
                         onReplaceSummary: { text in
                             insight.summary = text
                             saveInsight("modifySummary")
+                        },
+                        onSuppressPoint: { key in
+                            if !meeting.suppressedSummaryPoints.contains(key) {
+                                meeting.suppressedSummaryPoints.append(key)
+                            }
+                            saveInsight("suppressSummaryPoint")
                         },
                         onResearch: { text in
                             researchItem = ResearchItem(title: "Summary", text: text)
@@ -526,6 +559,199 @@ struct MeetingIntelligenceView: View {
     /// trailing punctuation stripped.
     private static func normalizeKey(_ text: String) -> String {
         MeetingReanalysis.normalizeKey(text)
+    }
+}
+
+/// Per-meeting brief that steers summary / actions / follow-ups.
+private struct AnalysisBriefEditor: View {
+    @Binding var text: String
+    var canReanalyze: Bool
+    var onSave: () -> Void
+    var onReanalyze: () -> Void
+    @State private var isExpanded = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { isExpanded.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color.orange.gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        Text("Analysis brief")
+                            .font(.subheadline.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .helpTip(.analysisBrief)
+
+                if canReanalyze {
+                    Button("Reanalyze with brief") {
+                        onSave()
+                        onReanalyze()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Rewrite summary, follow-ups, and actions using this brief. Deleted bullets stay gone.")
+                }
+            }
+
+            if isExpanded {
+                TextEditor(text: $text)
+                    .font(.callout)
+                    .frame(minHeight: 72, maxHeight: 140)
+                    .padding(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
+                    .onChange(of: text) { _, _ in
+                        onSave()
+                    }
+                Text("What this call is for — e.g. agree a delivery date for the sample. Your project overview in the transcript is preamble, not the summary. Right-click a bullet to delete it, then reanalyze.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Time window for Reanalyze so preamble / first half can be ignored.
+private struct AnalysisFocusEditor: View {
+    @Bindable var meeting: Meeting
+    var canReanalyze: Bool
+    var onSave: () -> Void
+    var onReanalyze: () -> Void
+
+    private enum Preset: String, CaseIterable, Identifiable {
+        case whole = "Whole meeting"
+        case secondHalf = "Second half"
+        case last20 = "Last 20 minutes"
+        case custom = "Custom range"
+        var id: String { rawValue }
+    }
+
+    @State private var preset: Preset = .whole
+    @State private var startText = "0:00"
+    @State private var endText = ""
+
+    private var span: TimeInterval {
+        let last = meeting.segments.map(\.endTime).max() ?? meeting.duration
+        return max(last, meeting.duration)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "scissors")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Color.teal.gradient, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                Text("Focus")
+                    .font(.subheadline.weight(.semibold))
+                Picker("Focus", selection: $preset) {
+                    ForEach(Preset.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .onChange(of: preset) { _, newValue in
+                    applyPreset(newValue)
+                }
+                if preset == .custom {
+                    TextField("0:00", text: $startText)
+                        .frame(width: 64)
+                    Text("–")
+                    TextField("end", text: $endText)
+                        .frame(width: 64)
+                    Button("Apply") { applyCustom() }
+                        .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+                if canReanalyze, meeting.analysisFocusStart != nil || meeting.analysisFocusEnd != nil {
+                    Button("Reanalyze this range") {
+                        onSave()
+                        onReanalyze()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Run extract-then-summarize on this window only. To make it a separate meeting, right-click the first line of the range in the transcript → Split Into New Meeting.")
+                }
+            }
+            .helpTip(.analysisFocus)
+            Text(focusCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { syncFromMeeting() }
+    }
+
+    private var focusCaption: String {
+        if meeting.analysisFocusStart == nil, meeting.analysisFocusEnd == nil {
+            return "Whole meeting. Use Second half or Last 20 minutes when the opening is just you describing the project. Split Into New Meeting (transcript ⋯) gives that range its own intel."
+        }
+        let start = MeetingReanalysis.clock(meeting.analysisFocusStart ?? 0)
+        let end = meeting.analysisFocusEnd.map(MeetingReanalysis.clock) ?? "end"
+        return "Reanalyze uses \(start)–\(end) only. Right-click the first line of that range in the transcript → Split Into New Meeting to give it its own insights."
+    }
+
+    private func applyPreset(_ preset: Preset) {
+        switch preset {
+        case .whole:
+            meeting.analysisFocusStart = nil
+            meeting.analysisFocusEnd = nil
+        case .secondHalf:
+            meeting.analysisFocusStart = span / 2
+            meeting.analysisFocusEnd = nil
+        case .last20:
+            meeting.analysisFocusStart = max(0, span - 20 * 60)
+            meeting.analysisFocusEnd = nil
+        case .custom:
+            startText = MeetingReanalysis.clock(meeting.analysisFocusStart ?? 0)
+            endText = meeting.analysisFocusEnd.map(MeetingReanalysis.clock) ?? MeetingReanalysis.clock(span)
+            return
+        }
+        onSave()
+    }
+
+    private func applyCustom() {
+        meeting.analysisFocusStart = MeetingReanalysis.parseClock(startText) ?? 0
+        if let end = MeetingReanalysis.parseClock(endText), end > (meeting.analysisFocusStart ?? 0) {
+            meeting.analysisFocusEnd = end
+        } else {
+            meeting.analysisFocusEnd = nil
+        }
+        onSave()
+    }
+
+    private func syncFromMeeting() {
+        if meeting.analysisFocusStart == nil, meeting.analysisFocusEnd == nil {
+            preset = .whole
+            return
+        }
+        let start = meeting.analysisFocusStart ?? 0
+        if abs(start - span / 2) < 2, meeting.analysisFocusEnd == nil {
+            preset = .secondHalf
+        } else if abs(start - max(0, span - 20 * 60)) < 2, meeting.analysisFocusEnd == nil {
+            preset = .last20
+        } else {
+            preset = .custom
+            startText = MeetingReanalysis.clock(start)
+            endText = meeting.analysisFocusEnd.map(MeetingReanalysis.clock) ?? MeetingReanalysis.clock(span)
+        }
     }
 }
 

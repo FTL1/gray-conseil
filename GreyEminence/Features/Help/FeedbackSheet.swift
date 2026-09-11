@@ -27,7 +27,7 @@ struct FeedbackSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Send feedback")
                 .font(.title2.weight(.semibold))
-            Text("Opens a GitHub issue on FTL1/grey-conseil. Default is text only: which pane, what broke or what you want. Meeting titles, transcripts, and screenshots are not attached unless you turn that on.")
+            Text("Opens a GitHub issue on this fork. Default is text only: which pane, what broke or what you want. Meeting titles, transcripts, and screenshots are not attached unless you turn that on.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -201,14 +201,14 @@ struct FeedbackSheet: View {
         if let screenshotURL, includeScreenshot {
             NSWorkspace.shared.activateFileViewerSelecting([screenshotURL])
         }
-        var comps = URLComponents(string: "https://github.com/FTL1/grey-conseil/issues/new")
+        var comps = URLComponents(string: "https://github.com/FTL1/greyeminence/issues/new")
         comps?.queryItems = [
             URLQueryItem(name: "title", value: issueTitle),
             URLQueryItem(name: "body", value: issueBody),
         ]
         if let url = comps?.url, url.absoluteString.count < 7000 {
             NSWorkspace.shared.open(url)
-        } else if let fallback = URL(string: "https://github.com/FTL1/grey-conseil/issues/new") {
+        } else if let fallback = URL(string: "https://github.com/FTL1/greyeminence/issues/new") {
             NSWorkspace.shared.open(fallback)
             copyNote = "Issue text is on the clipboard — paste it into the GitHub form (the URL was too long)."
         }

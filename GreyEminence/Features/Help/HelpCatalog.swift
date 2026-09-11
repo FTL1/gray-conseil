@@ -89,6 +89,8 @@ enum HelpTip: String {
     case tasksExport
     case tasksFind
     case tasksReset
+    case analysisBrief
+    case analysisFocus
 
     var tooltip: String {
         switch self {
@@ -192,7 +194,7 @@ enum HelpTip: String {
         case .settingsStalled:
             "Tasks older than this show as stalled. Does not complete or delete them."
         case .settingsCheckUpdates:
-            "Fetches FTL1/grey-conseil releases. Never Matt’s Grey Eminence feed."
+            "Fetches this fork's GitHub Releases. Never Matt’s Grey Eminence feed."
 
         case .settingsInputDevice:
             "Which mic is you. Built-in or a headset — this is the Me seat."
@@ -247,6 +249,10 @@ enum HelpTip: String {
             "Search the current filters. If meetings still need analysis, you will be asked first."
         case .tasksReset:
             "Back to analyzed meetings and my tasks."
+        case .analysisBrief:
+            "Your goal for this call. Reanalyze uses it so the summary is not your project preamble. Right-click bullets to delete them for good."
+        case .analysisFocus:
+            "Limit Reanalyze to the second half, last 20 minutes, or a custom range. Split Into New Meeting in the transcript gives that range its own intel."
         }
     }
 }

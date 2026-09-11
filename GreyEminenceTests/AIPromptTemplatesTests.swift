@@ -6,7 +6,7 @@ import XCTest
 final class AIPromptTemplatesTests: XCTestCase {
 
     func testPromptVersionIsMeetingV4() {
-        XCTAssertEqual(AIPromptTemplates.promptVersion, "meeting.v6")
+        XCTAssertEqual(AIPromptTemplates.promptVersion, "meeting.v8")
     }
 
     func testReanalysisPromptSubstitutesPlaceholders() {
@@ -44,11 +44,25 @@ final class AIPromptTemplatesTests: XCTestCase {
             calendarTitle: "T",
             myName: "Me",
             suppressedActionItems: ["old task"],
-            suppressedFollowUps: ["Who owns financing?"]
+            suppressedFollowUps: ["Who owns financing?"],
+            suppressedSummaryPoints: ["project overview lots of background"]
         )
         XCTAssertTrue(prompt.contains("DO NOT RE-SUGGEST"))
         XCTAssertTrue(prompt.contains("old task"))
         XCTAssertTrue(prompt.contains("Who owns financing?"))
+        XCTAssertTrue(prompt.contains("project overview lots of background"))
+    }
+
+    func testReanalysisPromptIncludesUserAnalysisBrief() {
+        let prompt = AIPromptTemplates.reanalysisPrompt(
+            transcript: "x",
+            calendarTitle: "T",
+            myName: "Me",
+            analysisGuidance: "Agree a delivery date for the sample."
+        )
+        XCTAssertTrue(prompt.contains("USER ANALYSIS BRIEF"))
+        XCTAssertTrue(prompt.contains("Agree a delivery date for the sample."))
+        XCTAssertTrue(prompt.lowercased().contains("preamble"))
     }
 
     func testSystemPromptGatesPreserveOnPreviousSummary() {

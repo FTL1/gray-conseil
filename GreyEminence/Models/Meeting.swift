@@ -55,6 +55,19 @@ final class Meeting {
     /// as suppressedActionItems but stored as normalized question text.
     var suppressedFollowUps: [String] = []
 
+    /// Summary bullets the user deleted. Reanalyze must not restore them
+    /// (or a reworded project-overview preamble).
+    var suppressedSummaryPoints: [String] = []
+
+    /// User-written brief for this meeting: what the call is FOR.
+    /// Injected into analysis / reanalyze. Empty means infer purpose only.
+    var analysisGuidance: String = ""
+
+    /// Optional transcript window (seconds from meeting start) for Reanalyze.
+    /// `nil` means the whole meeting. Lets you ignore preamble / first half.
+    var analysisFocusStart: TimeInterval?
+    var analysisFocusEnd: TimeInterval?
+
     /// The app the call was held in, when we can tell — bundle ID plus a
     /// friendly name. Recorded from whichever process held the microphone at
     /// the moment recording started, falling back to the app that owned the

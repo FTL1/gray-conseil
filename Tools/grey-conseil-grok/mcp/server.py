@@ -30,29 +30,47 @@ def library_root() -> Path:
     )
 
 
+# Grok stdio MCP is newline-delimited JSON. LSP-style Content-Length is also
+# accepted so older clients still work.
+_FRAMING = "ndjson"
+
+
 def send(msg: dict[str, Any]) -> None:
-    body = json.dumps(msg, ensure_ascii=False).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body)
-    sys.stdout.buffer.flush()
+    body = json.dumps(msg, ensure_ascii=False)
+    if _FRAMING == "lsp":
+        raw = body.encode("utf-8")
+        sys.stdout.buffer.write(f"Content-Length: {len(raw)}\r\n\r\n".encode("ascii") + raw)
+        sys.stdout.buffer.flush()
+        return
+    sys.stdout.write(body + "\n")
+    sys.stdout.flush()
 
 
 def read_message() -> dict[str, Any] | None:
-    headers: dict[str, str] = {}
-    while True:
-        line = sys.stdin.buffer.readline()
-        if not line:
-            return None
-        line = line.decode("utf-8")
-        if line in ("\r\n", "\n"):
-            break
-        if ":" in line:
-            key, value = line.split(":", 1)
-            headers[key.strip().lower()] = value.strip()
-    length = int(headers.get("content-length") or "0")
-    if length <= 0:
+    global _FRAMING
+    line = sys.stdin.buffer.readline()
+    if not line:
         return None
-    raw = sys.stdin.buffer.read(length)
-    return json.loads(raw.decode("utf-8"))
+    if line.lower().startswith(b"content-length:"):
+        _FRAMING = "lsp"
+        headers = {"content-length": line.split(b":", 1)[1].decode("utf-8").strip()}
+        while True:
+            nxt = sys.stdin.buffer.readline()
+            if not nxt or nxt in (b"\r\n", b"\n"):
+                break
+            if b":" in nxt:
+                key, value = nxt.split(b":", 1)
+                headers[key.decode("utf-8").strip().lower()] = value.decode("utf-8").strip()
+        length = int(headers.get("content-length") or "0")
+        if length <= 0:
+            return None
+        raw = sys.stdin.buffer.read(length)
+        return json.loads(raw.decode("utf-8"))
+    text = line.decode("utf-8").strip()
+    if not text:
+        return read_message()
+    _FRAMING = "ndjson"
+    return json.loads(text)
 
 
 def load_index(root: Path) -> dict[str, Any]:

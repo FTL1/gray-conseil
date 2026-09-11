@@ -918,18 +918,12 @@ struct TranscriptPanelView: View {
             attendeeNames: meeting.attendees.filter { $0.id != myID }.map(\.name),
             meName: SpeakerNames.effectiveMeName
         )
-        if let myID, let index = speakerRoster.seats.firstIndex(where: \.isMe) {
-            speakerRoster.seats[index].contactID = myID
-        }
-        for attendee in meeting.attendees where attendee.id != myID {
-            if let index = speakerRoster.seats.firstIndex(where: {
-                SpeakerNameMatcher.samePerson($0.name, attendee.name)
-                    || $0.name.compare(attendee.name, options: .caseInsensitive) == .orderedSame
-            }), speakerRoster.seats[index].contactID == nil {
-                speakerRoster.seats[index].contactID = attendee.id
-            }
-        }
         speakerRoster.bindNamedVoices(in: meeting.segments, contactNames: contactNameMap())
+        speakerRoster.attachContacts(
+            attendees: meeting.attendees,
+            myContactID: myID,
+            meNames: [SpeakerNames.effectiveMeName].compactMap { $0 }
+        )
         speakerRoster.collapseSamePersonSeats()
         if speakerRoster.unifyOntoSeats(in: meeting.segments) > 0 {
             saveEdit(site: "unifySpeakerSeats")
@@ -1146,11 +1140,20 @@ struct TranscriptPanelView: View {
 
     private func speakerActions(for speaker: Speaker, anchorID: UUID? = nil) -> SpeakerBadgeActions {
         let isMenuSpeaker = menuSpeaker?.matchesIdentity(speaker) == true
+        let paletteContact = SpeakerPalette.contact(
+            for: speaker,
+            contactID: speakerRoster.seat(matching: speaker)?.contactID,
+            in: Array(contacts)
+        )
         return SpeakerBadgeActions(
             talkSharePercent: talkShareByKey[speaker.identityKey],
-            color: SpeakerPalette.color(for: speaker, contacts: Array(contacts)),
-            colorSlot: SpeakerPalette.contact(for: speaker, in: Array(contacts))?.colorSlot,
-            isColorLocked: SpeakerPalette.contact(for: speaker, in: Array(contacts))?.isColorLocked ?? false,
+            color: SpeakerPalette.color(
+                for: speaker,
+                contactID: speakerRoster.seat(matching: speaker)?.contactID,
+                contacts: Array(contacts)
+            ),
+            colorSlot: paletteContact?.colorSlot,
+            isColorLocked: paletteContact?.isColorLocked ?? false,
             onPickColor: { slot, locked in
                 applySpeakerColor(slot, locked: locked, to: speaker)
             },
@@ -1253,7 +1256,11 @@ struct TranscriptPanelView: View {
     }
 
     private func applySpeakerColor(_ slot: Int, locked: Bool, to speaker: Speaker) {
-        var contact = SpeakerPalette.contact(for: speaker, in: Array(contacts))
+        var contact = SpeakerPalette.contact(
+            for: speaker,
+            contactID: speakerRoster.seat(matching: speaker)?.contactID,
+            in: Array(contacts)
+        )
         if contact == nil {
             let created = Contact(name: speaker.displayName)
             if !speaker.isGuestPlaceholder {
@@ -1879,7 +1886,11 @@ struct TranscriptPanelView: View {
 
         let service = AIIntelligenceService(
             client: client,
-            meetingID: target.id
+            meetingID: target.id,
+            suppressedActionItems: target.suppressedActionItems,
+            suppressedFollowUps: target.suppressedFollowUps,
+            suppressedSummaryPoints: target.suppressedSummaryPoints,
+            analysisGuidance: target.analysisGuidance
         )
         do {
             let roster = MeetingRoster.snapshot(for: target)
@@ -1887,7 +1898,10 @@ struct TranscriptPanelView: View {
                 try await service.reanalyze(
                     segments: snapshots,
                     roster: roster,
-                    calendarTitle: target.analysisTitleHint
+                    calendarTitle: target.analysisTitleHint,
+                    keptSummary: target.suppressedSummaryPoints.isEmpty
+                        ? ""
+                        : (target.latestInsight?.summary ?? "")
                 )
             }
             if let result = finalResult {

@@ -8,7 +8,7 @@ enum AIPromptTemplates {
     /// Bumped whenever the built-in prompt text changes meaningfully. Persisted with
     /// MeetingInsight so we can tell which prompt generation produced a given result
     /// and offer "regenerate with newer prompt" UX later.
-    static let promptVersion = "meeting.v6"
+    static let promptVersion = "meeting.v8"
 
     // MARK: - Public accessors
     //
@@ -21,9 +21,10 @@ enum AIPromptTemplates {
         PromptStore.shared.get(.meetingSystem, default: defaultSystemPrompt)
     }
 
-    static func initialAnalysisPrompt(transcript: String) -> String {
+    static func initialAnalysisPrompt(transcript: String, analysisGuidance: String = "") -> String {
         let template = PromptStore.shared.get(.meetingInitial, default: defaultInitialAnalysisPrompt)
         return PromptStore.render(template, values: ["transcript": transcript])
+            + steeringSuffix(guidance: analysisGuidance)
     }
 
     /// Full rewrite used by the Reanalyze button. Does not see prior insights.
@@ -32,7 +33,10 @@ enum AIPromptTemplates {
         calendarTitle: String,
         myName: String?,
         suppressedActionItems: [String] = [],
-        suppressedFollowUps: [String] = []
+        suppressedFollowUps: [String] = [],
+        suppressedSummaryPoints: [String] = [],
+        analysisGuidance: String = "",
+        keptSummary: String = ""
     ) -> String {
         let template = PromptStore.shared.get(.meetingReanalysis, default: defaultReanalysisPrompt)
         return PromptStore.render(template, values: [
@@ -43,9 +47,87 @@ enum AIPromptTemplates {
             "myName": myName?.isEmpty == false ? myName! : "Me",
             "suppressionBlock": suppressionBlock(
                 actionItems: suppressedActionItems,
-                followUps: suppressedFollowUps
+                followUps: suppressedFollowUps,
+                summaryPoints: suppressedSummaryPoints
             ),
-        ])
+        ]) + steeringSuffix(guidance: analysisGuidance, keptSummary: keptSummary)
+    }
+
+    /// Pass 1 of two-pass reanalyze: pull dated facts, not a pretty summary.
+    static func extractFactsPrompt(
+        transcript: String,
+        windowLabel: String,
+        analysisGuidance: String
+    ) -> String {
+        let window = windowLabel.isEmpty ? "the selected transcript" : windowLabel
+        return """
+        Extract facts from \(window). Do NOT write a meeting summary. Do NOT \
+        retell the user's project overview or preamble.
+
+        Return JSON only:
+        {
+          "preamble_until": "timestamp after which the real business starts, or 0:00",
+          "decisions": [{"time": "m:ss", "text": "what was decided", "who": "name or Me"}],
+          "commitments": [{"time": "m:ss", "text": "concrete task", "assignee": "Me or name or null", "quote": "verbatim 5-25 words"}],
+          "open_questions": [{"time": "m:ss", "text": "unanswered question from this window"}],
+          "numbers": [{"time": "m:ss", "text": "price, date, MW, count, or other figure actually spoken"}]
+        }
+
+        Rules:
+        - Prefer the later part of this window. Asks, prices, and next steps \
+        usually land after the overview.
+        - Only include commitments someone actually accepted or was assigned. \
+        Not "we should" without an owner.
+        - Empty arrays are fine. Do not invent.
+
+        \(steeringSuffix(guidance: analysisGuidance))
+
+        TRANSCRIPT:
+        \(transcript)
+        """
+    }
+
+    /// Pass 2: write the usual intel schema from extracted facts + transcript.
+    static func synthesizeFromExtractPrompt(
+        extract: String,
+        windowLabel: String,
+        calendarTitle: String,
+        myName: String?,
+        analysisGuidance: String,
+        keptSummary: String,
+        suppressedActionItems: [String],
+        suppressedFollowUps: [String],
+        suppressedSummaryPoints: [String]
+    ) -> String {
+        let who = myName?.isEmpty == false ? myName! : "Me"
+        let window = windowLabel.isEmpty ? "this meeting" : windowLabel
+        return """
+        Write meeting intelligence for \(who) from the FACT EXTRACT and the \
+        transcript of \(window). The extract is the source of truth for \
+        decisions, commitments, numbers, and open questions. The transcript \
+        is only for wording and quotes.
+
+        Calendar title (hint only, often wrong): \(calendarTitle.isEmpty ? "(none)" : calendarTitle)
+
+        FACT EXTRACT:
+        \(extract)
+
+        Produce the JSON schema from your system instructions (title, summary \
+        sections, action_items with source_quote, follow_ups, topics).
+
+        - Title and summary must serve the analysis brief if one is present.
+        - Do not write a project overview. Lead with progress toward the goal.
+        - action_items come from commitments in the extract. Keep assignee and quote.
+        - follow_ups come from open_questions in the extract.
+        - If preamble_until is set, ignore transcript before that time.
+
+        \(suppressionBlock(
+            actionItems: suppressedActionItems,
+            followUps: suppressedFollowUps,
+            summaryPoints: suppressedSummaryPoints
+        ))
+        \(steeringSuffix(guidance: analysisGuidance, keptSummary: keptSummary))
+        """
     }
 
     static func rollingAnalysisPrompt(
@@ -55,7 +137,9 @@ enum AIPromptTemplates {
         previousTopics: [String],
         newTranscript: String,
         suppressedActionItems: [String] = [],
-        suppressedFollowUps: [String] = []
+        suppressedFollowUps: [String] = [],
+        suppressedSummaryPoints: [String] = [],
+        analysisGuidance: String = ""
     ) -> String {
         let template = PromptStore.shared.get(.meetingRolling, default: defaultRollingAnalysisPrompt)
         return PromptStore.render(template, values: [
@@ -64,8 +148,12 @@ enum AIPromptTemplates {
             "previousFollowUps": formatNumberedList(previousFollowUps),
             "previousTopics": formatTopics(previousTopics),
             "newTranscript": newTranscript,
-            "suppressionBlock": suppressionBlock(actionItems: suppressedActionItems, followUps: suppressedFollowUps),
-        ])
+            "suppressionBlock": suppressionBlock(
+                actionItems: suppressedActionItems,
+                followUps: suppressedFollowUps,
+                summaryPoints: suppressedSummaryPoints
+            ),
+        ]) + steeringSuffix(guidance: analysisGuidance)
     }
 
     static func finalCleanupPrompt(
@@ -76,7 +164,9 @@ enum AIPromptTemplates {
         currentTopics: [String],
         suppressedActionItems: [String] = [],
         suppressedFollowUps: [String] = [],
-        relatedContext: String? = nil
+        suppressedSummaryPoints: [String] = [],
+        relatedContext: String? = nil,
+        analysisGuidance: String = ""
     ) -> String {
         let template = PromptStore.shared.get(.meetingFinal, default: defaultFinalCleanupPrompt)
         return PromptStore.render(template, values: [
@@ -85,9 +175,13 @@ enum AIPromptTemplates {
             "currentActionItems": formatActionItems(currentActionItems),
             "currentFollowUps": formatNumberedList(currentFollowUps),
             "currentTopics": formatTopics(currentTopics),
-            "suppressionBlock": suppressionBlock(actionItems: suppressedActionItems, followUps: suppressedFollowUps),
+            "suppressionBlock": suppressionBlock(
+                actionItems: suppressedActionItems,
+                followUps: suppressedFollowUps,
+                summaryPoints: suppressedSummaryPoints
+            ),
             "relatedContext": relatedContextBlock(relatedContext),
-        ])
+        ]) + steeringSuffix(guidance: analysisGuidance, keptSummary: currentSummary)
     }
 
     /// Wraps retrieved snippets from other meetings in instructions that scope
@@ -135,9 +229,19 @@ enum AIPromptTemplates {
     /// Builds a "DO NOT RE-SUGGEST" block for prompts when the user has deleted
     /// action items or follow-ups on a prior run. Returns an empty string when
     /// both lists are empty so the template renders cleanly.
-    private static func suppressionBlock(actionItems: [String], followUps: [String]) -> String {
-        guard !actionItems.isEmpty || !followUps.isEmpty else { return "" }
-        var block = "\n\nSUPPRESSED ITEMS — DO NOT RE-SUGGEST:\nThe user has explicitly deleted the following from a prior analysis. Do NOT include these (or semantically equivalent rewordings) in `action_items` or `follow_ups`.\n"
+    private static func suppressionBlock(
+        actionItems: [String],
+        followUps: [String],
+        summaryPoints: [String] = []
+    ) -> String {
+        guard !actionItems.isEmpty || !followUps.isEmpty || !summaryPoints.isEmpty else { return "" }
+        var block = "\n\nSUPPRESSED ITEMS — DO NOT RE-SUGGEST:\nThe user has explicitly deleted the following from a prior analysis. Do NOT include these (or semantically equivalent rewordings).\n"
+        if !summaryPoints.isEmpty {
+            block += "\nSuppressed summary bullets (do not restore project-overview / preamble points):\n"
+            for item in summaryPoints {
+                block += "- \(item)\n"
+            }
+        }
         if !actionItems.isEmpty {
             block += "\nSuppressed action items:\n"
             for item in actionItems {
@@ -151,6 +255,44 @@ enum AIPromptTemplates {
             }
         }
         return block
+    }
+
+    /// Always appended after the template so developer prompt overrides still
+    /// receive the user's per-meeting brief.
+    static func steeringSuffix(guidance: String, keptSummary: String = "") -> String {
+        guidanceBlock(guidance) + keptSummaryBlock(keptSummary)
+    }
+
+    static func guidanceBlock(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return """
+
+
+        USER ANALYSIS BRIEF (authoritative — this is what the meeting is FOR):
+        \(trimmed)
+
+        The transcript may open with the user describing the project. That is \
+        preamble, not the summary. Do not write a project overview the user \
+        already knows. Lead with progress, decisions, and next steps toward \
+        this brief. Action items and follow-ups must serve this goal.
+        """
+    }
+
+    static func keptSummaryBlock(_ json: String) -> String {
+        let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "[]" else { return "" }
+        return """
+
+
+        USER-KEPT SUMMARY (JSON). The user already deleted bullets they do not \
+        want. Treat this remaining shape as preferred. Do not restore deleted \
+        preamble or overview. Expand toward the analysis brief and the live \
+        transcript; keep facts that are still here unless the transcript \
+        contradicts them.
+
+        \(trimmed)
+        """
     }
 
     /// Return the built-in default for a key. Used by the editor to show a diff /
@@ -337,7 +479,9 @@ enum AIPromptTemplates {
         updating documents, aligning language with what another speaker actually said, sending \
         a package, getting a decision — not merely the subject matter on a calendar invite or \
         a shared screen. Lead the summary with that purpose. A calendar title may be generic \
-        or wrong.
+        or wrong. If the user message contains a USER ANALYSIS BRIEF, that brief is the \
+        purpose. Do not summarize the user's project-overview preamble as if it were the \
+        outcome of the call.
         - "summary" MUST be a JSON array of section objects as shown above. Return [] if there \
         is not enough substantive content yet — never return filler sections.
         - Group related points into coherent sections. Aim for 2-5 sections with 2-6 points each. \
@@ -397,7 +541,9 @@ enum AIPromptTemplates {
 
         Infer PURPOSE first: what was the tool user ("Me") trying to get done — fix a \
         document, align language with what another speaker actually said, send a package, \
-        get a decision — not merely the subject on a calendar invite or a shared screen.
+        get a decision — not merely the subject on a calendar invite or a shared screen. \
+        Weight the last third of the transcript; prices, asks, and next steps usually \
+        land after the overview.
 
         TRANSCRIPT:
         {{transcript}}
@@ -422,6 +568,9 @@ enum AIPromptTemplates {
         to capture.
         - Shared-screen content is evidence of the artifact being reviewed, not automatically \
         the meeting's only topic.
+        - Weight the last third of the transcript more than the opening. The user \
+        describing the project at the start is preamble. Decisions, prices, and \
+        "can you do X" land later.
 
         Then produce the JSON schema from your instructions:
         - title: 5-8 words naming the PURPOSE (e.g. aligning outbound documents with spoken \
@@ -452,7 +601,9 @@ enum AIPromptTemplates {
         currentTopics: [String],
         vocalCues: String,
         suppressedActionItems: [String] = [],
-        suppressedFollowUps: [String] = []
+        suppressedFollowUps: [String] = [],
+        suppressedSummaryPoints: [String] = [],
+        analysisGuidance: String = ""
     ) -> String {
         let key: PromptKey = depth == .deepest ? .meetingDeepest : .meetingDeep
         let template = PromptStore.shared.get(
@@ -472,9 +623,10 @@ enum AIPromptTemplates {
             "vocalCues": vocalCues,
             "suppressionBlock": suppressionBlock(
                 actionItems: suppressedActionItems,
-                followUps: suppressedFollowUps
+                followUps: suppressedFollowUps,
+                summaryPoints: suppressedSummaryPoints
             ),
-        ])
+        ]) + steeringSuffix(guidance: analysisGuidance, keptSummary: currentSummary)
     }
 
     private static let defaultDeepPrompt: String = """

@@ -42,24 +42,29 @@ enum SpeakerPalette {
         color(slot: hashSlot(for: name))
     }
 
-    static func color(for speaker: Speaker, contacts: [Contact]) -> Color {
-        if let contact = contact(for: speaker, in: contacts) {
+    static func color(for speaker: Speaker, contactID: UUID? = nil, contacts: [Contact]) -> Color {
+        if let contact = contact(for: speaker, contactID: contactID, in: contacts) {
             return contact.paletteColor
         }
         return color(forName: speaker.displayName)
     }
 
-    static func contact(for speaker: Speaker, in contacts: [Contact]) -> Contact? {
-        let name = speaker.displayName
-        if speaker.isMe {
-            if let id = Meeting.storedMyContactID,
-               let mine = contacts.first(where: { $0.id == id }) {
-                return mine
-            }
-            return contacts.first { $0.matchesSpeakerName(name) }
-                ?? contacts.first { $0.matchesSpeakerName(SpeakerNames.effectiveMeName ?? "Me") }
+    static func contact(for speaker: Speaker, contactID: UUID? = nil, in contacts: [Contact]) -> Contact? {
+        if let contactID, let match = contacts.first(where: { $0.id == contactID }) {
+            return match
         }
-        return contacts.first { $0.matchesSpeakerName(name) }
+        if speaker.isMe, let id = Meeting.storedMyContactID,
+           let mine = contacts.first(where: { $0.id == id }) {
+            return mine
+        }
+        let name = speaker.displayName
+        if let match = contacts.first(where: { $0.matchesSpeakerName(name) }) {
+            return match
+        }
+        if speaker.isMe {
+            return contacts.first { $0.matchesSpeakerName(SpeakerNames.effectiveMeName ?? "Me") }
+        }
+        return nil
     }
 
     struct Claim: Equatable {

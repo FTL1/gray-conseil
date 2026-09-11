@@ -97,6 +97,10 @@ struct DashboardView: View {
                         Label("Recent Meetings", systemImage: "clock")
                             .font(.headline)
                             .padding(.horizontal)
+                        Text("Open a meeting to write an analysis brief and delete bad summary bullets.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
 
                         ForEach(recentMeetings) { meeting in
                             RecentMeetingCard(meeting: meeting)
