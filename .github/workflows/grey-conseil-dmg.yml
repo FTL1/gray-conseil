@@ -26,6 +26,13 @@ jobs:
       actions: write
 
     steps:
+      - name: Require Grey Conseil branch
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "feature/grey-conseil" ]; then
+            echo "::error::Build Grey Conseil DMG only on feature/grey-conseil (got ${GITHUB_REF_NAME})."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
