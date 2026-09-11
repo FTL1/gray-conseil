@@ -293,6 +293,7 @@ enum MeetingReanalysis {
         return chunks.isEmpty ? [snapshots] : chunks
     }
 
+    @MainActor
     private static func twoPassReanalyze(
         service: AIIntelligenceService,
         snapshots: [SegmentSnapshot],
