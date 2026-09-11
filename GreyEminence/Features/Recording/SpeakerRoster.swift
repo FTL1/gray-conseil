@@ -76,9 +76,12 @@ final class SpeakerRoster {
             let names = (meNames + [seats[index].name])
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
-            if let attendee = attendees.first(where: { contact in
+            let matches = attendees.filter { contact in
                 names.contains { contact.matchesSpeakerName($0) }
-            }) {
+            }
+            // Header/calendar row first so mixer and attendee chips share a
+            // color even when My Profile is a different Contact.
+            if let attendee = matches.first(where: { $0.id != myContactID }) ?? matches.first {
                 seats[index].contactID = attendee.id
                 used.insert(attendee.id)
             } else if let myContactID {

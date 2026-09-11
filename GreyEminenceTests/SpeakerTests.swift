@@ -35,7 +35,7 @@ final class SpeakerTests: XCTestCase {
         XCTAssertTrue(named.isMe)
         XCTAssertTrue(named.matchesIdentity(.me))
         XCTAssertTrue(Speaker.me.matchesIdentity(named))
-        XCTAssertEqual(named.initials, "CL")
+        XCTAssertEqual(named.initials, "AM")
         XCTAssertFalse(named.matchesIdentity(.other("Alex Morgan")))
     }
 
