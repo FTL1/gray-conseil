@@ -314,6 +314,7 @@ enum AIPromptTemplates {
         case .transcriptCorrectionSystem: defaultTranscriptCorrectionSystemPrompt
         case .transcriptCorrection: defaultTranscriptCorrectionPrompt
         }
+    }
 
     static var transcriptCorrectionSystemPrompt: String {
         PromptStore.shared.get(.transcriptCorrectionSystem, default: defaultTranscriptCorrectionSystemPrompt)
@@ -348,7 +349,6 @@ enum AIPromptTemplates {
         TRANSCRIPT
         {{lines}}
         """
-    }
 
     // MARK: - Screen-frame analysis
 
