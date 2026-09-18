@@ -14,6 +14,7 @@ enum AIUsagePurpose: String, Codable, Sendable, CaseIterable {
     /// should appear at most once per meeting however many times you export.
     case reportFigureAnchors
     case reanalysis
+    case transcriptCorrection
     case ask
     case interview
     case prep
@@ -28,6 +29,7 @@ enum AIUsagePurpose: String, Codable, Sendable, CaseIterable {
         case .sessionSynthesis: "Session recaps"
         case .reportFigureAnchors: "Report figures"
         case .reanalysis: "Reanalysis"
+        case .transcriptCorrection: "Transcript correction"
         case .ask: "Ask"
         case .interview: "Interview"
         case .prep: "Meeting prep"
@@ -38,7 +40,7 @@ enum AIUsagePurpose: String, Codable, Sendable, CaseIterable {
     var group: AIUsageGroup {
         switch self {
         case .transcriptInitial, .transcriptRolling: .transcript
-        case .transcriptFinal, .reanalysis: .finalAnalysis
+        case .transcriptFinal, .reanalysis, .transcriptCorrection: .finalAnalysis
         case .frameAnalysis, .sessionSynthesis: .screenShare
         case .reportFigureAnchors: .reports
         case .ask, .interview, .prep, .other: .other

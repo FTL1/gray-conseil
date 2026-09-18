@@ -311,7 +311,43 @@ enum AIPromptTemplates {
         case .screenSessionSynthesis: defaultSessionSynthesisPrompt
         case .reportSystem:   defaultReportSystemPrompt
         case .reportFigureAnchors: defaultFigureAnchorPrompt
+        case .transcriptCorrectionSystem: defaultTranscriptCorrectionSystemPrompt
+        case .transcriptCorrection: defaultTranscriptCorrectionPrompt
         }
+
+    static var transcriptCorrectionSystemPrompt: String {
+        PromptStore.shared.get(.transcriptCorrectionSystem, default: defaultTranscriptCorrectionSystemPrompt)
+    }
+
+    static func transcriptCorrectionPrompt(context: String, lines: String) -> String {
+        let template = PromptStore.shared.get(.transcriptCorrection, default: defaultTranscriptCorrectionPrompt)
+        return PromptStore.render(template, values: ["context": context, "lines": lines])
+    }
+
+    static let defaultTranscriptCorrectionSystemPrompt = """
+        You repair speech-recognition errors in a meeting transcript. The \
+        recogniser sometimes writes a common word or phrase that sounds like \
+        what was said but makes no sense where it sits. You fix only those. You \
+        never rephrase, tidy grammar, remove filler, or touch a line you are \
+        not sure about. You MUST respond with ONLY valid JSON matching the \
+        schema in the user message — no prose, no markdown.
+        """
+
+    private static let defaultTranscriptCorrectionPrompt: String = """
+        {{context}}
+
+        Below is the transcript, one line per turn. Lines the recogniser was \
+        unsure about are marked (low confidence); look hardest there, but a \
+        confident line can still be wrong when it makes no sense in context.
+
+        Return JSON of exactly this shape, listing ONLY lines that need a fix, \
+        each with the complete corrected text of that line:
+        {"corrections":[{"line":"L12","text":"the full corrected line"}]}
+        An empty list is the right answer for a transcript with nothing to fix.
+
+        TRANSCRIPT
+        {{lines}}
+        """
     }
 
     // MARK: - Screen-frame analysis
