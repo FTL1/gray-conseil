@@ -495,7 +495,6 @@ final class ReProcessingQueue {
             Re-processing report for "\(title)":
               total:       \(Self.fmt(totalDuration))
               transcribe:  \(Self.fmt(transcribeDuration)) (\(chunksProcessed) chunks, \(String(format: "%.1fx", throughput)) realtime)
-              correct:     \(Self.fmt(correctDuration)) (\(correctedLines) line(s) fixed)
               analyze:     \(Self.fmt(analyzeDuration))
               reindex:     \(Self.fmt(reindexDuration))
               output:      \(upgraded.count) segments, \(wordCount) words, covers \(Self.fmt(audioRanges)) of audio
