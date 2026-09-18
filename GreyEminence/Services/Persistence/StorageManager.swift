@@ -22,6 +22,16 @@ final class StorageManager: Sendable {
         }
     }
 
+    /// Path only — never creates. Read paths must use this: asking
+    /// `recordingDirectory` for a URL creates the folder as a side effect, so
+    /// merely *probing* for a sidecar left an empty directory behind for every
+    /// meeting checked. The retention sweep then "removed audio" for hundreds
+    /// of meetings a launch while freeing 0.0 MB, because all it was deleting
+    /// was folders the probe had just made.
+    func recordingDirectoryPath(for meetingID: UUID) -> URL {
+        recordingsURL.appendingPathComponent(meetingID.uuidString, isDirectory: true)
+    }
+
     func recordingDirectory(for meetingID: UUID) -> URL {
         let dir = recordingsURL.appendingPathComponent(meetingID.uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -29,18 +39,18 @@ final class StorageManager: Sendable {
     }
 
     func micAudioURL(for meetingID: UUID) -> URL {
-        recordingDirectory(for: meetingID).appendingPathComponent("mic.m4a")
+        recordingDirectoryPath(for: meetingID).appendingPathComponent("mic.m4a")
     }
 
     func systemAudioURL(for meetingID: UUID) -> URL {
-        recordingDirectory(for: meetingID).appendingPathComponent("system.m4a")
+        recordingDirectoryPath(for: meetingID).appendingPathComponent("system.m4a")
     }
 
     /// Sidecar file used by the re-processing pipeline to checkpoint
     /// progress between chunks so an interrupted job (live-recording
     /// yield, app restart) can resume instead of restarting from chunk 0.
     func reProcessCheckpointURL(for meetingID: UUID) -> URL {
-        recordingDirectory(for: meetingID).appendingPathComponent("reprocess-checkpoint.json")
+        recordingDirectoryPath(for: meetingID).appendingPathComponent("reprocess-checkpoint.json")
     }
 
     func loadReProcessCheckpoint(for meetingID: UUID) -> ReProcessingCheckpoint? {
@@ -61,27 +71,101 @@ final class StorageManager: Sendable {
         try? FileManager.default.removeItem(at: reProcessCheckpointURL(for: meetingID))
     }
 
+    // MARK: - Sidecars
+
+    /// Read a JSON sidecar, treating any failure as absent.
+    ///
+    /// These files are all derived data — a corrupt or half-written one should
+    /// cost a recomputation, never an error the caller has to handle.
+    func loadSidecar<T: Decodable>(_ type: T.Type, at url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    func saveSidecar<T: Encodable>(_ value: T, to url: URL) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// Derived per-meeting data that must outlive the audio.
+    ///
+    /// Not in the recording directory: the retention sweep deletes that
+    /// wholesale, and these files are the reason a meeting can still be worked
+    /// with once its audio is gone. Putting a voice signature next to the
+    /// recording would have purged it in the same pass — silently removing the
+    /// ability to identify speakers in exactly the older meetings most likely
+    /// to need it.
+    private var derivedURL: URL {
+        let dir = appSupportURL.appendingPathComponent("Derived", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// How many search records a meeting *should* have, recorded when it was
+    /// last indexed.
+    ///
+    /// Exists so the launch sweep can spot partial coverage without rebuilding
+    /// each meeting's work list — which meant chunking and sorting every
+    /// transcript in the library on the main actor, and froze the app for as
+    /// long as that took.
+    struct SearchCoverage: Codable, Sendable {
+        let modelIdentifier: String
+        let expectedRecords: Int
+    }
+
+    func searchCoverageURL(for meetingID: UUID) -> URL {
+        derivedURL.appendingPathComponent("\(meetingID.uuidString)-coverage.json")
+    }
+
+    func loadSearchCoverage(for meetingID: UUID) -> SearchCoverage? {
+        loadSidecar(SearchCoverage.self, at: searchCoverageURL(for: meetingID))
+    }
+
+    func saveSearchCoverage(_ coverage: SearchCoverage, for meetingID: UUID) {
+        saveSidecar(coverage, to: searchCoverageURL(for: meetingID))
+    }
+
+    /// Voice signatures for a meeting's diarization clusters.
+    ///
+    /// A sidecar beside the recording: derived from audio, recomputable, and
+    /// kept out of the store so changing how signatures are built doesn't mean
+    /// a schema migration.
+    func voiceClustersURL(for meetingID: UUID) -> URL {
+        derivedURL.appendingPathComponent("\(meetingID.uuidString)-voices.json")
+    }
+
+    func loadVoiceClusters(for meetingID: UUID) -> MeetingVoiceClusters? {
+        guard let stored = loadSidecar(MeetingVoiceClusters.self, at: voiceClustersURL(for: meetingID)),
+              stored.isCurrent else { return nil }
+        return stored
+    }
+
+    func saveVoiceClusters(_ clusters: MeetingVoiceClusters, for meetingID: UUID) {
+        saveSidecar(clusters, to: voiceClustersURL(for: meetingID))
+    }
+
     /// Cached report figure-anchoring plan. A sidecar file rather than a
     /// SwiftData field: it is derived data that can always be recomputed, so
     /// storing it here buys the cache without a schema version bump.
     func reportAnchorPlanURL(for meetingID: UUID) -> URL {
-        recordingDirectory(for: meetingID).appendingPathComponent("report-anchors.json")
+        recordingDirectoryPath(for: meetingID).appendingPathComponent("report-anchors.json")
     }
 
     /// Returns the plan only if it was computed against `insightID` — a
     /// regenerated analysis produces different sections, so an older plan
     /// would anchor figures to headings that no longer exist.
     func loadReportAnchorPlan(for meetingID: UUID, insightID: UUID) -> ReportAnchorPlan? {
-        let url = reportAnchorPlanURL(for: meetingID)
-        guard let data = try? Data(contentsOf: url),
-              let plan = try? JSONDecoder().decode(ReportAnchorPlan.self, from: data),
+        guard let plan = loadSidecar(ReportAnchorPlan.self, at: reportAnchorPlanURL(for: meetingID)),
               plan.isValid(forInsight: insightID) else { return nil }
         return plan
     }
 
     func saveReportAnchorPlan(_ plan: ReportAnchorPlan, for meetingID: UUID) {
-        guard let data = try? JSONEncoder().encode(plan) else { return }
-        try? data.write(to: reportAnchorPlanURL(for: meetingID), options: .atomic)
+        saveSidecar(plan, to: reportAnchorPlanURL(for: meetingID))
     }
 
     /// Remove the entire recording directory for a meeting (mic + system
@@ -175,7 +259,7 @@ final class StorageManager: Sendable {
     /// Resolve a `ScreenShareFrame.imagePath` (relative to the recording
     /// directory) to an on-disk URL. Doesn't check existence.
     func frameURL(for meetingID: UUID, relativePath: String) -> URL {
-        recordingDirectory(for: meetingID).appendingPathComponent(relativePath)
+        recordingDirectoryPath(for: meetingID).appendingPathComponent(relativePath)
     }
 
     /// Write one frame's JPEG data and return the path relative to the
