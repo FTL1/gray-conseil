@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "matt-audio-speaker-port",
+            version: "0.28.4-public.2",
+            title: "Far-side audio, hang-up stop, speaker repair",
+            summary: "Long calls keep the remote voice. Recordings stop when the call hangs up and follow the call’s mic. Play any transcript line. Fix split speakers in older meetings. Re-transcribe can run in the background during the next call.",
+            systemImage: "waveform.badge.mic",
+            tint: .indigo,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "public-build-and-analysis-brief",
             version: "0.28.4-public.1",
             title: "Steer the write-up, matching colors",

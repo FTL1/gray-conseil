@@ -322,9 +322,24 @@ enum SchemaV26: VersionedSchema {
     static var models: [any PersistentModel.Type] { SchemaV25.models }
 }
 
+/// SchemaV27 adds `Meeting.absentAttendeeIDs` — invitees marked as not
+/// having attended. Ported from Grey Eminence 0.41 (Matt's V20).
+enum SchemaV27: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(27, 0, 0) }
+    static var models: [any PersistentModel.Type] { SchemaV26.models }
+}
+
+/// SchemaV28 adds `TranscriptSegment.micLevel` — loudness of the mic
+/// audio under a line, for telling speaker bleed from the user's voice.
+/// Ported from Grey Eminence 0.42 (Matt's V21).
+enum SchemaV28: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(28, 0, 0) }
+    static var models: [any PersistentModel.Type] { SchemaV27.models }
+}
+
 enum GreyEminenceMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [SchemaV1.self, SchemaV2.self, SchemaV3.self, SchemaV4.self, SchemaV5.self, SchemaV6.self, SchemaV7.self, SchemaV8.self, SchemaV9.self, SchemaV10.self, SchemaV11.self, SchemaV12.self, SchemaV13.self, SchemaV14.self, SchemaV15.self, SchemaV16.self, SchemaV17.self, SchemaV18.self, SchemaV19.self, SchemaV20.self, SchemaV21.self, SchemaV22.self, SchemaV23.self, SchemaV24.self, SchemaV25.self, SchemaV26.self]
+        [SchemaV1.self, SchemaV2.self, SchemaV3.self, SchemaV4.self, SchemaV5.self, SchemaV6.self, SchemaV7.self, SchemaV8.self, SchemaV9.self, SchemaV10.self, SchemaV11.self, SchemaV12.self, SchemaV13.self, SchemaV14.self, SchemaV15.self, SchemaV16.self, SchemaV17.self, SchemaV18.self, SchemaV19.self, SchemaV20.self, SchemaV21.self, SchemaV22.self, SchemaV23.self, SchemaV24.self, SchemaV25.self, SchemaV26.self, SchemaV27.self, SchemaV28.self]
     }
 
     static var stages: [MigrationStage] {
@@ -353,7 +368,9 @@ enum GreyEminenceMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: SchemaV22.self, toVersion: SchemaV23.self),
             .lightweight(fromVersion: SchemaV23.self, toVersion: SchemaV24.self),
             .lightweight(fromVersion: SchemaV24.self, toVersion: SchemaV25.self),
-            .lightweight(fromVersion: SchemaV25.self, toVersion: SchemaV26.self)
+            .lightweight(fromVersion: SchemaV25.self, toVersion: SchemaV26.self),
+            .lightweight(fromVersion: SchemaV26.self, toVersion: SchemaV27.self),
+            .lightweight(fromVersion: SchemaV27.self, toVersion: SchemaV28.self)
         ]
     }
 }

@@ -195,7 +195,7 @@ struct ContentView: View {
                 }
                 .helpTip(.toolbarFind)
             }
-            if selectedDestination == .meetings || selectedDestination == .archive || selectedDestination == .recording || selectedDestination == .interviews {
+            if selectedDestination == .meetings || selectedDestination == .archive || selectedDestination == .recording || selectedDestination == .interviews || selectedDestination == .ask {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showInspector.toggle()
@@ -238,6 +238,8 @@ struct ContentView: View {
             // services directly with their own contexts instead.
             guard !TestEnvironment.isRunningTests else { return }
 
+            // Both fetch from SwiftData on the main actor, so they are worth
+            // naming: silence during them is indistinguishable from a hang.
             TransientActivityCoordinator.shared.run("Checking for an interrupted recording…") {
                 checkForInterruptedRecording()
             }
@@ -258,8 +260,15 @@ struct ContentView: View {
                 modelContext
             }
             Task(priority: .background) { @MainActor [modelContext] in
-                let report = TransientActivityCoordinator.shared.run("Running startup maintenance…") {
-                    MaintenanceService.runStartupMaintenance(modelContext: modelContext)
+                let report = await TransientActivityCoordinator.shared.runAsync("Running startup maintenance…") {
+                    await MaintenanceService.runStartupMaintenance(modelContext: modelContext) { done, total, name in
+                        // Name the step and show how far along it is: a bar
+                        // that says only "running" for a minute is
+                        // indistinguishable from one that has hung.
+                        let coordinator = TransientActivityCoordinator.shared
+                        if !name.isEmpty { coordinator.retitle("Startup maintenance — \(name.lowercased())") }
+                        coordinator.setProgress(completed: done, total: total)
+                    }
                 }
                 if !report.skipped {
                     TransientActivityCoordinator.shared.flash("Maintenance complete")
@@ -623,6 +632,33 @@ struct ContentView: View {
             }
     }
 
+    /// Jump from an Ask snippet to the moment it came from: select its
+    /// meeting, then scroll the transcript (or seek the screen-share player)
+    /// once the detail view has mounted.
+    private func openMeeting(for result: SearchResult) {
+        let descriptor = FetchDescriptor<Meeting>()
+        guard let meeting = (try? modelContext.fetch(descriptor))?.first(where: { $0.id == result.meetingID }) else { return }
+        selectedMeeting = meeting
+        selectedDestination = .meetings
+        switch result.sourceKind {
+        case .transcriptSegment:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                pendingScrollSegmentID = result.sourceID
+            }
+        case .screenObservation:
+            // The embedding record doesn't carry the frame's timestamp —
+            // resolve it at click time and seek the player there.
+            let timestamp = meeting.screenFrames.first(where: { $0.id == result.sourceID })?.timestamp
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                if let timestamp {
+                    pendingSeekTime = timestamp
+                }
+            }
+        default:
+            break
+        }
+    }
+
     @ViewBuilder
     private var contentArea: some View {
         switch selectedDestination {
@@ -862,7 +898,7 @@ struct ContentView: View {
                         }
                     }
                 }
-            })
+            }
         case .activityLog:
             LogView()
         case .settings:
@@ -1049,7 +1085,7 @@ struct ActionItemRow: View {
         .popover(isPresented: $showContactPicker) {
             ContactPicker(
                 excludedContacts: excludedIDs,
-                prioritizedContacts: item.meeting?.attendees ?? []
+                prioritizedContacts: item.meeting?.presentAttendees ?? []
             ) { contact in
                 item.assignedContact = contact
                 persist("assignContact")

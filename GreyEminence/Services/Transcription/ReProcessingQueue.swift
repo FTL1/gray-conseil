@@ -45,6 +45,9 @@ final class ReProcessingQueue {
     private var modelContainer: ModelContainer?
     private weak var recordingViewModel: RecordingViewModel?
     private let transcriber = HighQualityTranscriber()
+    /// Held for the same reason as the transcriber: `prepare()` loads models
+    /// onto the Neural Engine, and the queue works through a backlog.
+    private let diarizer = SpeakerDiarizationService()
 
     private let persistenceKey = "reProcessingQueue.pending"
 
@@ -73,7 +76,7 @@ final class ReProcessingQueue {
         for meeting in stuck {
             let priorState = meeting.reProcessingState.flatMap(ReProcessingState.init(rawValue:))
             switch priorState {
-            case .queued, .transcribing, .analyzing, .reindexing:
+            case .queued, .transcribing, .correcting, .analyzing, .reindexing:
                 meeting.reProcessingState = ReProcessingState.failed.rawValue
                 meeting.reProcessingError = "Interrupted on previous session — click Retry to resume"
                 interrupted += 1
@@ -138,14 +141,31 @@ final class ReProcessingQueue {
     func yieldToLiveRecording() {
         guard let current else { return }
         let id = current.id
+        // Past transcription the job is a minute of AI calls and an index
+        // write — nothing that competes with the live recording. Yielding
+        // here re-queued a job that then finished on its own, and the whole
+        // meeting was transcribed again from scratch (2026-09-11, 33 min).
+        guard Self.isYieldable(current.phase) else {
+            LogManager.send("Re-processing of \"\(current.title)\" is in its \(current.phase.label.lowercased()) phase — letting it finish", category: .transcription)
+            return
+        }
         LogManager.send("Yielding re-processing of \"\(current.title)\" to live recording", category: .transcription)
-        pending.insert(id, at: 0)
+        if !pending.contains(id) { pending.insert(id, at: 0) }
         persistPending()
         if let context = modelContainer?.mainContext,
            let meeting = fetchMeeting(meetingID: id, in: context) {
             markState(meeting: meeting, state: .queued, in: context)
         }
         jobTask?.cancel()
+    }
+
+    /// Only the transcription phase is worth interrupting for a live
+    /// recording; everything after it is short and off the Neural Engine.
+    static func isYieldable(_ phase: ReProcessingState) -> Bool {
+        switch phase {
+        case .queued, .transcribing: true
+        case .correcting, .analyzing, .reindexing, .cancelling, .failed: false
+        }
     }
 
     // MARK: - Worker
@@ -175,10 +195,61 @@ final class ReProcessingQueue {
         current = nil
     }
 
+    // MARK: Running alongside a live recording
+
+    /// Re-processing used to wait for silence: five back-to-back meetings
+    /// meant four hours of audio queued behind the last one. It can share
+    /// the machine with a live recording, at low priority and under watch —
+    /// the moment the live pipeline shows a backlog, it yields for the rest
+    /// of that recording. The audio files are never at risk either way; the
+    /// cost of getting this wrong is a lagging live transcript.
+    static let runsDuringRecordingKey = "reprocess.runsDuringRecording"
+    static var runsDuringRecording: Bool {
+        UserDefaults.standard.object(forKey: runsDuringRecordingKey) as? Bool ?? true
+    }
+    /// Seconds into a recording before background work may start: the live
+    /// recogniser and diarizer load their models in this window, and that
+    /// is when contention was measured to freeze Whisper for minutes.
+    static let recordingGrace: TimeInterval = 90
+    /// Set when the live pipeline showed strain during this recording;
+    /// cleared when the recording ends. One strike is enough — the
+    /// recording is more important than the catch-up.
+    private var pausedForThisRecording = false
+    /// Whether the running job started while a recording was live, so the
+    /// watchdog knows to look.
+    private var jobRunsAlongsideRecording = false
+
+    /// Whether the queue may start or continue work right now.
+    private func mayRunNow() -> Bool {
+        guard let vm = recordingViewModel else { return false }
+        if vm.state == .idle {
+            pausedForThisRecording = false
+            return true
+        }
+        guard Self.runsDuringRecording, !pausedForThisRecording, let load = vm.liveLoad else { return false }
+        return load.secondsSinceStart >= Self.recordingGrace && load.isHealthy
+    }
+
+    /// Called from the worker while a job runs alongside a recording.
+    private func yieldIfLiveRecordingIsStrained() {
+        guard jobRunsAlongsideRecording, let vm = recordingViewModel, vm.state != .idle, let load = vm.liveLoad else { return }
+        guard !load.isHealthy else { return }
+        pausedForThisRecording = true
+        LogManager.send(
+            String(format: "Live recording is falling behind (audio backlog %.1fs, recognition backlog %.1fs) — pausing re-processing until it ends", load.audioBacklogSeconds, load.recognitionBacklogSeconds),
+            category: .transcription,
+            level: .warning
+        )
+        yieldToLiveRecording()
+    }
+
     private func workerTickThrowing() async throws {
         if recordingViewModel == nil { return }
-        if recordingViewModel?.state != .idle { return }
-        if current != nil { return }
+        if current != nil {
+            yieldIfLiveRecordingIsStrained()
+            return
+        }
+        guard mayRunNow() else { return }
         guard !pending.isEmpty else { return }
 
         guard Self.hasEnoughDiskSpaceForReProcess() else {
@@ -189,15 +260,41 @@ final class ReProcessingQueue {
         let meetingID = pending.removeFirst()
         persistPending()
         current = RunningJob(id: meetingID, title: "", phase: .queued)
+        jobRunsAlongsideRecording = recordingViewModel?.state != .idle
+        if jobRunsAlongsideRecording {
+            LogManager.send("Re-processing alongside the live recording at low priority", category: .transcription)
+        }
 
-        let task = Task { [weak self] in
+        // Utility priority: the live recording's work must win every
+        // scheduling decision this shares with it.
+        let task = Task(priority: .utility) { [weak self] in
             guard let self else { return }
             await self.processJob(meetingID: meetingID)
         }
         jobTask = task
+        // The tick awaits the job, so the strain check runs from a sibling.
+        let watchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                await self?.yieldIfLiveRecordingIsStrained()
+            }
+        }
         await task.value
+        watchdog.cancel()
+        jobRunsAlongsideRecording = false
         jobTask = nil
         current = nil
+        // A job that ran to completion must not be waiting in the queue as
+        // well — a yield that arrived in its final second used to leave it
+        // there, and it was then processed all over again.
+        if let context = modelContainer?.mainContext,
+           let meeting = fetchMeeting(meetingID: meetingID, in: context),
+           meeting.reProcessingState == nil,
+           pending.contains(meetingID) {
+            pending.removeAll { $0 == meetingID }
+            persistPending()
+            LogManager.send("ReProcessingQueue: dropped a stale re-queue of a meeting that already finished", category: .transcription)
+        }
     }
 
     /// Re-processing holds a ~1.5 GB WhisperKit model in memory and writes
@@ -247,12 +344,29 @@ final class ReProcessingQueue {
         setPhase(.transcribing, for: meeting, in: context)
         phaseStart = Date()
         let checkpoint = StorageManager.shared.loadReProcessCheckpoint(for: meetingID)
+        // The same nouns feed both passes: Whisper gets them as a prompt so
+        // it mishears fewer of them, and the correction pass gets them as
+        // context so it knows what the mis-heard ones should have been.
+        let correctionContext = TranscriptCorrectionService.Context.make(for: meeting)
+        let promptText = HighQualityTranscriber.promptText(
+            title: correctionContext.title,
+            participants: correctionContext.participants,
+            // Whisper's prompt is prose, not a weighted list, so it takes the
+            // terms flat — but not the ones weighted as barely-ever, which is
+            // the same reason the repair pass quarantines them.
+            vocabulary: correctionContext.terms
+                .filter { $0.boost > TranscriptCorrectionService.Context.rareBoostThreshold }
+                .sorted { $0.boost > $1.boost }
+                .map(\.text),
+            topics: correctionContext.topics
+        )
         let upgraded: [HighQualityTranscriber.Segment]
         do {
             upgraded = try await transcriber.transcribe(
                 micChunks: micChunks,
                 systemChunks: sysChunks,
                 resumeFrom: checkpoint,
+                promptText: promptText,
                 onProgress: { [weak self] progress in
                     Task { @MainActor [weak self] in
                         self?.updateTranscriptionProgress(progress)
@@ -304,8 +418,32 @@ final class ReProcessingQueue {
             return
         }
 
-        // Live recording started mid-transcription — requeue and let it run later.
-        if recordingViewModel?.state != .idle {
+        // Same protection against a pass that ran but barely heard anything.
+        // A decoder misconfiguration (2026-09-09: prompt tokens) turned two
+        // two-hour meetings into 13 and 19 segments, and the swap below
+        // threw away the live transcripts that had them in full.
+        let existingWords = meeting.segments.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        let newWords = upgraded.reduce(0) { $0 + $1.text.split(separator: " ").count }
+        if HighQualityTranscriber.isImplausiblyThin(newWords: newWords, existingWords: existingWords) {
+            StorageManager.shared.deleteReProcessCheckpoint(for: meetingID)
+            LogManager.send(
+                "Re-transcription of \"\(title)\" heard far less than the live transcript (\(newWords) vs \(existingWords) words) — keeping original",
+                category: .transcription,
+                level: .error
+            )
+            markState(
+                meeting: meeting,
+                state: .failed,
+                error: "Re-transcription heard far less than the live transcript (\(newWords) vs \(existingWords) words) — original kept",
+                in: context
+            )
+            return
+        }
+
+        // A recording is live and background work is not allowed alongside
+        // it — requeue and let it run later. When it is allowed, carry on:
+        // what follows is a minute of AI calls and an index write.
+        if recordingViewModel?.state != .idle, !Self.runsDuringRecording {
             LogManager.send("Live recording started during reprocess of \(meetingID); requeueing", category: .transcription)
             pending.insert(meetingID, at: 0)
             persistPending()
@@ -318,45 +456,23 @@ final class ReProcessingQueue {
         // redo if interrupted, so no further checkpointing is needed.
         StorageManager.shared.deleteReProcessCheckpoint(for: meetingID)
 
-        var (segmentSnapshots, audioRanges) = swapSegments(meeting: meeting, upgraded: upgraded, in: context)
-        do {
-            let contacts = (try? context.fetch(FetchDescriptor<Contact>())) ?? []
-            let expected = MeetingSpeakerRecovery.candidates(meeting: meeting, contacts: contacts)
-                .filter(\.isPreselected)
-            let relabeled = try await MeetingSpeakerRecovery.recover(
-                meeting: meeting,
-                expected: expected
-            )
-            if relabeled.changed > 0 {
-                PersistenceGate.save(context, site: "reProcess/relabelSpeakers", critical: true, meetingID: meetingID)
-                segmentSnapshots = meeting.segments
-                    .sorted { $0.startTime < $1.startTime }
-                    .map {
-                        SegmentSnapshot(
-                            speaker: $0.speaker,
-                            text: $0.text,
-                            formattedTimestamp: "",
-                            isFinal: true
-                        )
-                    }
-                LogManager.send(
-                    "Re-process assigned \(relabeled.changed) remote line(s); \(relabeled.unknownSpeakers.count) unknown leftover(s)",
-                    category: .transcription,
-                    meetingID: meetingID
-                )
-            }
-        } catch {
-            LogManager.send(
-                "Re-process speaker recovery skipped: \(error.localizedDescription)",
-                category: .transcription,
-                level: .warning,
-                meetingID: meetingID
-            )
+        // Diarize the system track before swapping, so the new transcript can
+        // be attributed as it is written rather than relabelled afterwards.
+        let diarized = await diarizeSystemTrack(chunks: sysChunks, title: title)
+        let (segmentSnapshots, audioRanges, attributionVoiceCount) = swapSegments(
+            meeting: meeting,
+            upgraded: upgraded,
+            diarized: diarized,
+            in: context
+        )
+        if let voiceCount = attributionVoiceCount, voiceCount > 0 {
+            LogManager.send("Diarization found \(voiceCount) distinct voice(s) in \"\(title)\"", category: .transcription)
         }
+        let analysisSegments = segmentSnapshots
 
         setPhase(.analyzing, for: meeting, in: context)
         phaseStart = Date()
-        await reRunAIAnalysis(meeting: meeting, segments: segmentSnapshots, context: context)
+        await reRunAIAnalysis(meeting: meeting, segments: analysisSegments, context: context)
         analyzeDuration = Date().timeIntervalSince(phaseStart)
 
         setPhase(.reindexing, for: meeting, in: context)
@@ -379,12 +495,33 @@ final class ReProcessingQueue {
             Re-processing report for "\(title)":
               total:       \(Self.fmt(totalDuration))
               transcribe:  \(Self.fmt(transcribeDuration)) (\(chunksProcessed) chunks, \(String(format: "%.1fx", throughput)) realtime)
+              correct:     \(Self.fmt(correctDuration)) (\(correctedLines) line(s) fixed)
               analyze:     \(Self.fmt(analyzeDuration))
               reindex:     \(Self.fmt(reindexDuration))
               output:      \(upgraded.count) segments, \(wordCount) words, covers \(Self.fmt(audioRanges)) of audio
             """,
             category: .transcription
         )
+    }
+
+    /// Best-effort: a failure here costs attribution, not the transcript. The
+    /// upgraded text is the point of re-processing and must survive a
+    /// diarizer that won't load.
+    private func diarizeSystemTrack(chunks: [URL], title: String) async -> [DiarizedSegment] {
+        guard !chunks.isEmpty else { return [] }
+        do {
+            try await diarizer.prepare()
+            return try await diarizer.diarizeTrack(chunkURLs: chunks)
+        } catch is CancellationError {
+            return []
+        } catch {
+            LogManager.send(
+                "Diarization unavailable for \"\(title)\" — transcript keeps text but not speakers: \(error.localizedDescription)",
+                category: .transcription,
+                level: .warning
+            )
+            return []
+        }
     }
 
     private static func fmt(_ seconds: TimeInterval) -> String {
@@ -428,8 +565,9 @@ final class ReProcessingQueue {
     private func swapSegments(
         meeting: Meeting,
         upgraded: [HighQualityTranscriber.Segment],
+        diarized: [DiarizedSegment],
         in context: ModelContext
-    ) -> ([SegmentSnapshot], TimeInterval) {
+    ) -> ([SegmentSnapshot], TimeInterval, Int?) {
         for old in meeting.segments { context.delete(old) }
         meeting.segments.removeAll()
 
@@ -437,19 +575,40 @@ final class ReProcessingQueue {
         // mic/system dedup before persisting — otherwise echoed speech (the
         // same phrase captured by both the mic and the system audio tap)
         // shows up twice in the final transcript.
+        // Attribution for the system side comes from the diarization pass over
+        // the same audio. Without it every remote voice collapsed into one
+        // anonymous "Speaker" — which is what made a four-person meeting read
+        // as a conversation between the user and a single monolith.
+        let attribution = SpeakerIdentification.attribute(diarized: diarized, meeting: meeting)
+
         let raw: [TranscriptSegment] = upgraded.map { seg in
-            let speaker: Speaker = seg.source == .mic ? Speaker.resolvedMe() : .other(Speaker.guestLabel(index: 1))
-            return TranscriptSegment(
+            let speaker: Speaker
+            if seg.source == .mic {
+                speaker = .me
+            } else {
+                // With several remote voices an unattributed stretch keeps the
+                // honest label rather than going to whoever spoke nearby; with
+                // one, the attribution hands it to that voice.
+                speaker = attribution?.speaker(from: seg.startTime, to: seg.endTime) ?? .unidentified
+            }
+            let segment = TranscriptSegment(
                 speaker: speaker,
                 text: seg.text,
                 startTime: seg.startTime,
                 endTime: seg.endTime,
                 isFinal: true
             )
+            segment.confidence = seg.confidence
+            if seg.source == .mic { segment.micLevel = seg.level }
+            return segment
         }
         let dedup = TranscriptDeduplicator.deduplicate(raw)
-        if dedup.removedCount > 0 {
-            LogManager.send("Re-processing dedup removed \(dedup.removedCount) echo segment(s)", category: .transcription)
+        if dedup.removedCount > 0 || dedup.reassignedCount > 0 {
+            LogManager.send(
+                "Re-processing dedup removed \(dedup.removedCount) echo segment(s), reattributed \(dedup.reassignedCount) quiet line(s) to the far side"
+                    + (dedup.userLevelBaseline.map { String(format: " (user voice baseline RMS %.4f)", $0) } ?? ""),
+                category: .transcription
+            )
         }
 
         var totalDuration: TimeInterval = 0
@@ -469,7 +628,72 @@ final class ReProcessingQueue {
             meeting.duration = totalDuration
         }
         PersistenceGate.save(context, site: "reProcess/swapSegments", critical: true, meetingID: meeting.id)
-        return (snapshots, totalDuration)
+        return (snapshots, totalDuration, attribution?.voiceCount)
+    }
+
+    /// Fix mis-heard words on the transcript as it stands, without
+    /// re-transcribing. The on-demand path for a meeting that was processed
+    /// before this pass existed; re-indexes search when anything changed.
+    /// Returns how many lines were corrected.
+    func correctTranscript(for meeting: Meeting, in context: ModelContext) async -> Int {
+        let correctionContext = TranscriptCorrectionService.Context.make(for: meeting)
+        let corrected = await applyCorrections(meeting: meeting, correctionContext: correctionContext, in: context)
+        if corrected > 0 {
+            await reIndexEmbeddings(meeting: meeting)
+        }
+        return corrected
+    }
+
+    private func applyCorrections(
+        meeting: Meeting,
+        correctionContext: TranscriptCorrectionService.Context,
+        in context: ModelContext
+    ) async -> Int {
+        let segments = meeting.segments.sorted { $0.startTime < $1.startTime }
+        guard !segments.isEmpty else { return 0 }
+        guard let client = try? await AIClientFactory.makeClient() else {
+            LogManager.send("Transcript correction skipped: AI not configured", category: .transcription, meetingID: meeting.id)
+            return 0
+        }
+        let lines = segments.enumerated().map { offset, segment in
+            TranscriptCorrectionService.Line(
+                index: offset,
+                speaker: segment.speaker.displayName,
+                text: segment.text,
+                confidence: segment.confidence,
+                isUserEdited: segment.isEdited
+            )
+        }
+        do {
+            let corrections = try await TranscriptCorrectionService(client: client)
+                .corrections(for: lines, context: correctionContext, meetingID: meeting.id)
+            let applied = TranscriptCorrectionService.apply(corrections, to: segments)
+            if applied > 0 {
+                PersistenceGate.save(context, site: "reProcess/corrections", critical: true, meetingID: meeting.id)
+            }
+            LogManager.send(
+                "Transcript correction: \(applied) of \(lines.count) line(s) fixed (\(corrections.count) proposed)",
+                category: .transcription,
+                meetingID: meeting.id
+            )
+            return applied
+        } catch {
+            LogManager.send(
+                "Transcript correction skipped: \(error.localizedDescription)",
+                category: .transcription,
+                level: .warning,
+                meetingID: meeting.id
+            )
+            return 0
+        }
+    }
+
+    /// The analysis input, rebuilt after corrections so the summary sees
+    /// the fixed words. Same shape `swapSegments` produces.
+    private static func snapshots(of meeting: Meeting) -> [SegmentSnapshot] {
+        meeting.segments
+            .sorted { $0.startTime < $1.startTime }
+            .map { SegmentSnapshot(speaker: $0.speaker, text: $0.text, formattedTimestamp: "", isFinal: true) }
     }
 
     private func reRunAIAnalysis(meeting: Meeting, segments: [SegmentSnapshot], context: ModelContext) async {
@@ -558,10 +782,9 @@ final class ReProcessingQueue {
         var result: [URL] = []
         var cumulative: TimeInterval = 0
         for url in urls {
-            let duration = (try? AVAudioFile(forReading: url)).map { file -> TimeInterval in
-                guard file.processingFormat.sampleRate > 0 else { return 10 }
-                return Double(file.length) / file.processingFormat.sampleRate
-            } ?? 10
+            // Same question the transcriber's timeline asks, so it gets the
+            // same answer — including the finite guard this copy lacked.
+            let duration = HighQualityTranscriber.assumedDuration(of: url, fallback: 10)
             let chunkRange = cumulative...(cumulative + duration)
             if chunkRange.upperBound > window.lowerBound && chunkRange.lowerBound < window.upperBound {
                 result.append(url)

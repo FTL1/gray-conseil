@@ -7,6 +7,26 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.2 — 2026-09-18
+
+Ported Grey Eminence 0.32–0.45 audio and speaker work onto this fork (schema V27–V28; no merge of Matt’s tree).
+
+**Far-side audio stays.** Capture loops no longer hop to the main actor per buffer, so a long Zoom/Teams call does not drop the remote voice when the live transcript gets heavy.
+
+**Recordings stop when the call hangs up**, including ones you started by hand. They follow the call app’s microphone if Teams switches devices mid-call. Auto-stop debounce is 20 seconds.
+
+**Play a transcript line.** Completed meetings can play the recorded audio under a line (already in public.1; locator/track work from 0.36 is included).
+
+**Speaker repair.** Settings → Audio → Fix speakers in older meetings folds extra “Speaker 2” ghosts, re-checks first words against the full set of voices, and is reversible. One-word “yeah”s no longer seed extra people.
+
+**Speaker bleed.** Quiet echo of the far side through your speakers into the mic is dropped or reassigned (micLevel on each line).
+
+**Re-transcribe during the next meeting** (Settings, on by default) at low priority, and it yields if live transcription falls behind.
+
+**Did not attend.** Invitees can be marked absent so they drop out of the AI roster without leaving the invite list.
+
+**Launch no longer beachballs** on daily maintenance; the status bar names the step.
+
 ## 0.28.4-public.1 — 2026-09-10
 
 First public Grey Conseil build. Docs and examples use anonymous names (Jane Doe, Bob Smith). Check for Updates reads this public repository's Releases.

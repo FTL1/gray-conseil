@@ -8,16 +8,20 @@ import Foundation
 /// when enabled, so there is no cost when the user has auto-start disabled.
 ///
 /// The service is driven by explicit `noteStart`/`noteStop` calls from
-/// `RecordingViewModel` so it understands whether the current recording is
-/// auto-started (and should auto-stop when the call ends) or manually started
-/// (user is in control — stay out of the way).
+/// `RecordingViewModel`. A recording is bound to the app whose call it is —
+/// the one holding the microphone when it started, by any route — and ends
+/// when that app lets go of the mic. A recording with nobody else on the mic
+/// is a solo one; the user is in control and the detector stays out of the way.
 @Observable
 @MainActor
 final class MeetingDetectionService {
     enum Mode {
         case disabled
         case armedForStart
-        case trackingAutoRun
+        /// Recording, bound to `trackedHolder`. Ends when that app releases the mic.
+        case tracking
+        /// Recording with nothing to track: nobody else was on the mic when
+        /// it started, or it was already running when detection was enabled.
         case passive
     }
 
@@ -31,10 +35,71 @@ final class MeetingDetectionService {
         let pid: pid_t
         let bundleID: String?
         let appName: String?
+        /// The microphone this process is capturing from, when Core Audio
+        /// reports a real one. A call app that has the Yeti open reports the
+        /// Yeti here, which is how the recorder ends up on the same device.
+        var inputDevice: InputDevice? = nil
+    }
+
+    /// A real input device another process has open.
+    struct InputDevice: Sendable, Equatable {
+        let uid: String
+        let name: String
+    }
+
+    /// Whether recordings should follow the call app's microphone rather
+    /// than the device chosen in Settings. On by default: the whole point of
+    /// recording a call is to hear what the call heard.
+    static let followCallMicrophoneKey = "audio.followCallMicrophone"
+
+    static var followsCallMicrophone: Bool {
+        followsCallMicrophone(in: .standard)
+    }
+
+    static func followsCallMicrophone(in defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: followCallMicrophoneKey) as? Bool ?? true
+    }
+
+    /// The microphone to record from, given who is holding the mic.
+    ///
+    /// The holder the start policy would act on wins — that is the call —
+    /// and any other holder with a real device is the fallback, since two
+    /// apps listening at once are almost always on the same microphone.
+    /// nil means nothing useful was learned and the Settings choice applies.
+    static func captureDevice(for holders: [MicHolder]) -> InputDevice? {
+        if let device = startDecision(for: holders).holder?.inputDevice {
+            return device
+        }
+        return holders.lazy.compactMap(\.inputDevice).first
+    }
+
+    /// The app a recording made now is *of*: the call the start policy would
+    /// act on, else whoever is on a real microphone, else anyone holding the
+    /// mic. Stamped on the meeting as its source app and tracked so the
+    /// recording ends when this app hangs up. nil is a solo recording.
+    static func sourceHolder(for holders: [MicHolder]) -> MicHolder? {
+        startDecision(for: holders).holder
+            ?? holders.first(where: { $0.inputDevice != nil })
+            ?? holders.first
+    }
+
+    /// Whether two holders are the same application. Bundle identity when we
+    /// have it; the pid otherwise, for HAL-direct clients we cannot name.
+    static func isSameApp(_ lhs: MicHolder, _ rhs: MicHolder) -> Bool {
+        if let lhsID = lhs.bundleID, let rhsID = rhs.bundleID {
+            return lhsID == rhsID
+        }
+        return lhs.pid == rhs.pid
     }
 
     private(set) var mode: Mode = .disabled
     private(set) var externalMicInUse: Bool = false
+
+    /// The app the current recording is bound to, with the microphone it had
+    /// open at the last poll. Followed across device changes — Teams opens
+    /// the built-in mic first and moves to the chosen one a few seconds later
+    /// — because a call switching microphones is still the same call.
+    private(set) var trackedHolder: MicHolder?
 
     /// True while the 5s poll is running, so callers can prefer the cached
     /// `currentHolders` over a fresh Core Audio enumeration.
@@ -45,12 +110,27 @@ final class MeetingDetectionService {
     private(set) var currentHolders: [MicHolder] = []
 
     private let startDebounce: TimeInterval = 10
-    private let stopDebounce: TimeInterval = 60
+    /// How long the tracked app must be off the microphone before the
+    /// recording ends. 60 s while the rule was "nobody on the mic"; with one
+    /// app tracked, 20 s rides out a Teams reconnect or device switch (the
+    /// built-in→Yeti hop shows no gap at all) and a test call on 2026-09-14
+    /// was stopped by hand 53 s after hang-up because nothing had happened.
+    private let stopDebounce: TimeInterval = 20
     private let pollInterval: TimeInterval = 5
 
     private var timer: Timer?
     private var inUseSince: Date?
     private var clearSince: Date?
+
+    /// Wall clock for the debounces; tests advance it by hand.
+    var now: () -> Date = { Date() }
+    /// Whether `enable` schedules the 5s Core Audio poll. Tests drive
+    /// `apply(_:)` directly and leave coreaudiod alone.
+    private let pollsAutomatically: Bool
+
+    init(pollsAutomatically: Bool = true) {
+        self.pollsAutomatically = pollsAutomatically
+    }
     /// Set when the user manually stops mid-call. Blocks auto-start until the
     /// external mic-in-use signal has cleared, so we don't re-record the same
     /// meeting they just told us to stop recording.
@@ -67,6 +147,9 @@ final class MeetingDetectionService {
 
     var onStartRequested: (() -> Void)?
     var onStopRequested: (() -> Void)?
+    /// The app this recording is bound to is now on a different microphone.
+    /// The recorder moves its capture to match.
+    var onSourceDeviceChanged: ((MicHolder) -> Void)?
     /// Raised instead of `onStartRequested` for apps that hold the mic
     /// outside of calls — the UI asks the user.
     var onConfirmationRequested: ((MicHolder) -> Void)?
@@ -78,7 +161,7 @@ final class MeetingDetectionService {
         guard mode == .disabled else { return }
         mode = currentlyRecording ? .passive : .armedForStart
         resetTimings()
-        startTimer()
+        if pollsAutomatically { startTimer() }
         LogManager.send("Meeting auto-detection enabled", category: .audio)
     }
 
@@ -88,21 +171,40 @@ final class MeetingDetectionService {
         timer = nil
         resetTimings()
         waitingForMicClear = false
+        trackedHolder = nil
         if externalMicInUse { externalMicInUse = false }
         LogManager.send("Meeting auto-detection disabled", category: .audio)
     }
 
-    func noteStart(_ origin: Origin) {
+    /// A recording started, by any route, with `holders` on the microphone.
+    ///
+    /// Binds the recording to the call app among them (see `sourceHolder`)
+    /// so it ends when that app hangs up — a recording the user started by
+    /// hand mid-call is still a recording of that call. On 2026-09-14 a
+    /// manual restart onto the right microphone ran 31 minutes past the end
+    /// of the Teams call because only auto-started runs used to be tracked.
+    func noteStart(holders: [MicHolder]) {
         guard mode != .disabled else { return }
-        mode = (origin == .auto) ? .trackingAutoRun : .passive
         // Recording now — don't ask again about the hold we just acted on.
         hasPromptedForCurrentHold = true
         resetTimings()
+        if let source = Self.sourceHolder(for: holders) {
+            trackedHolder = source
+            mode = .tracking
+            LogManager.send(
+                "Recording bound to \(Self.describe(source)) — stops when it releases the microphone",
+                category: .audio
+            )
+        } else {
+            trackedHolder = nil
+            mode = .passive
+        }
     }
 
     func noteStop(_ origin: Origin) {
         guard mode != .disabled else { return }
         mode = .armedForStart
+        trackedHolder = nil
         waitingForMicClear = (origin == .manual) && queryMicInUse()
         resetTimings()
     }
@@ -136,7 +238,10 @@ final class MeetingDetectionService {
         }
     }
 
-    private func apply(_ holders: [MicHolder]) {
+    /// One poll's worth of holders. Internal so the policy can be driven
+    /// with synthetic holders in tests.
+    func apply(_ holders: [MicHolder]) {
+
         guard mode != .disabled else { return }
         logHolderChange(holders)
         currentHolders = holders
@@ -155,10 +260,10 @@ final class MeetingDetectionService {
         switch mode {
         case .armedForStart:
             handleArmed(holders: holders)
-        case .trackingAutoRun:
+        case .tracking:
             // Deliberately keyed off mic-held only, never voice activity: a
             // long silence mid-call must not end the recording.
-            handleTracking(inUse: inUse)
+            handleTracking(holders: holders)
         case .passive, .disabled:
             break
         }
@@ -175,10 +280,10 @@ final class MeetingDetectionService {
             return
         }
         clearSince = nil
-        if inUseSince == nil { inUseSince = Date() }
+        if inUseSince == nil { inUseSince = now() }
         guard let since = inUseSince else { return }
         let debounce = decision.debounce ?? startDebounce
-        guard Date().timeIntervalSince(since) >= debounce else { return }
+        guard now().timeIntervalSince(since) >= debounce else { return }
 
         let who = holder.appName ?? holder.bundleID ?? "another app"
         switch decision {
@@ -242,18 +347,41 @@ final class MeetingDetectionService {
         return pendingConfirmation ?? .none
     }
 
-    private func handleTracking(inUse: Bool) {
-        if !inUse {
-            inUseSince = nil
-            if clearSince == nil { clearSince = Date() }
-            guard let since = clearSince else { return }
-            if Date().timeIntervalSince(since) >= stopDebounce {
-                LogManager.send("Auto-detected meeting end (mic clear for \(Int(stopDebounce))s)", category: .audio)
-                onStopRequested?()
-            }
-        } else {
+    /// Is the app this recording is bound to still on the microphone? Other
+    /// holders don't count either way: Discord idling in a channel must not
+    /// keep a finished Teams recording alive, and a call switching
+    /// microphones is still the same call.
+    private func handleTracking(holders: [MicHolder]) {
+        guard let tracked = trackedHolder else { return }
+        inUseSince = nil
+        if let live = holders.first(where: { Self.isSameApp($0, tracked) }) {
             clearSince = nil
+            if let device = live.inputDevice, device != tracked.inputDevice {
+                let from = tracked.inputDevice?.name ?? "no reported microphone"
+                LogManager.send(
+                    "\(Self.describe(tracked, withDevice: false)) moved from \(from) to \(device.name) — still the same call",
+                    category: .audio
+                )
+                trackedHolder = live
+                onSourceDeviceChanged?(live)
+            }
+            return
         }
+        if clearSince == nil { clearSince = now() }
+        guard let since = clearSince else { return }
+        if now().timeIntervalSince(since) >= stopDebounce {
+            LogManager.send(
+                "Auto-detected meeting end (\(Self.describe(tracked, withDevice: false)) off the microphone for \(Int(stopDebounce))s)",
+                category: .audio
+            )
+            onStopRequested?()
+        }
+    }
+
+    private static func describe(_ holder: MicHolder, withDevice: Bool = true) -> String {
+        let who = holder.appName ?? holder.bundleID ?? "pid \(holder.pid)"
+        guard withDevice, let device = holder.inputDevice else { return who }
+        return "\(who) on \(device.name)"
     }
 
     private func queryMicInUse() -> Bool {
@@ -271,9 +399,15 @@ final class MeetingDetectionService {
     ///
     /// Safe to call when disabled — `RecordingViewModel` uses it for a
     /// one-shot read when a recording is started manually.
+    /// Off-main wrapper for the poll.
     ///
     /// The CoreAudio calls below are synchronous mach round-trips to
-    /// coreaudiod. Run on the main thread that is a beachball at launch.
+    /// coreaudiod — one to list process objects, then two per process — and
+    /// the very first of them makes the HAL check out an instance, load its
+    /// plug-ins and enumerate every device. Run on the main thread that is a
+    /// beachball at launch, which is exactly where it showed up: the sample
+    /// caught `tick()` inside `HALSystem::InitializeDevices()`.
+
     nonisolated static func holdersOffMainThread() async -> [MicHolder] {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -323,6 +457,14 @@ final class MeetingDetectionService {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
+        // Input-scoped: the global scope answers with nothing, and the output
+        // scope lists the speakers. Verified 2026-09-08 against a live Teams
+        // call, which reported "Yeti Stereo Microphone" here.
+        var devicesAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioProcessPropertyDevices,
+            mScope: kAudioObjectPropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
         var holders: [MicHolder] = []
         for processObject in processObjects {
             var pid: pid_t = 0
@@ -348,11 +490,31 @@ final class MeetingDetectionService {
                 appName: MeetingAppRegistry.displayName(
                     for: app?.bundleIdentifier,
                     fallback: app?.localizedName
-                )
+                ),
+                inputDevice: Self.inputDevice(of: processObject, address: &devicesAddress)
             ))
         }
 
         return holders
+    }
+
+    /// The first recordable microphone a process object has open, if any.
+    nonisolated private static func inputDevice(
+        of processObject: AudioObjectID,
+        address: inout AudioObjectPropertyAddress
+    ) -> InputDevice? {
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(processObject, &address, 0, nil, &size) == noErr,
+              size > 0 else { return nil }
+        var devices = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(processObject, &address, 0, nil, &size, &devices) == noErr else {
+            return nil
+        }
+        for device in devices where AudioDeviceInfo.isRecordableInput(device) {
+            guard let uid = AudioDeviceInfo.uid(of: device), let name = AudioDeviceInfo.name(of: device) else { continue }
+            return InputDevice(uid: uid, name: name)
+        }
+        return nil
     }
 
     /// Logs only on transitions — the poll runs every 5s and would otherwise
@@ -361,7 +523,10 @@ final class MeetingDetectionService {
         guard holders != lastLoggedHolders else { return }
         lastLoggedHolders = holders
         let identity = holders
-            .map { $0.bundleID ?? "pid \($0.pid)" }
+            .map { holder in
+                let who = holder.bundleID ?? "pid \(holder.pid)"
+                return holder.inputDevice.map { "\(who) on \($0.name)" } ?? who
+            }
             .joined(separator: ", ")
         if holders.isEmpty {
             LogManager.send("Meeting detector: no other app holding the mic", category: .audio)

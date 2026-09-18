@@ -31,6 +31,16 @@ enum Speaker: Codable, Hashable, Sendable {
 
     static func guestLabel(index: Int) -> String { placeholderLabel(index: index) }
 
+    /// Far-side voice the diarizer heard but could not tell apart.
+    /// Stored as Matt's "Speaker" so repair/dedup round-trip; display prettifies.
+    static let unidentifiedLabel = "Speaker"
+    static var unidentified: Speaker { .other(unidentifiedLabel) }
+    static func numbered(_ index: Int) -> Speaker {
+        .other("\(unidentifiedLabel) \(max(index, 1))")
+    }
+
+    var isUnidentified: Bool { isGuestPlaceholder }
+
     static func unknownLabel(index: Int) -> String { placeholderLabel(index: index) }
 
     static func prettyRemoteName(_ raw: String) -> String {

@@ -11,6 +11,12 @@ actor MicrophoneCaptureService {
     /// stuck capture (IOProc stopped firing — route change, sleep/wake,
     /// tap revoked) without hopping actors per buffer.
     private let lastBufferAt = OSAllocatedUnfairLock<Date?>(initialState: nil)
+    /// Buffers handed to the stream by the tap; see `SystemAudioCaptureService`.
+    private let delivered = OSAllocatedUnfairLock<Int>(initialState: 0)
+
+    nonisolated var deliveredBufferCount: Int {
+        delivered.withLock { $0 }
+    }
 
     let bufferSize: AVAudioFrameCount = 4096
 
@@ -30,6 +36,10 @@ actor MicrophoneCaptureService {
     /// ignored — otherwise the observer feeds itself in a loop.
     private var lastEngineBuildAt: Date = .distantPast
     private static let buildSettleWindow: TimeInterval = 3
+    /// True between `suspendCapture` and `resumeCapture`, so an engine rebuilt
+    /// while the recording is paused is paused too rather than quietly
+    /// resuming the mic.
+    private var isSuspended = false
 
     /// Timestamp of the most recent buffer delivered from the audio tap.
     /// `nil` until the first buffer arrives. Safe to call from any isolation.
@@ -57,6 +67,8 @@ actor MicrophoneCaptureService {
         self.requestedDeviceUID = deviceUID
         self.captureStartUptime = ProcessInfo.processInfo.systemUptime
         self.recoveryAttempts = 0
+        self.isSuspended = false
+        delivered.withLock { $0 = 0 }
 
         let stream = AsyncStream<TaggedAudioBuffer> { continuation in
             self.continuation = continuation
@@ -132,6 +144,8 @@ actor MicrophoneCaptureService {
         let startTime = self.captureStartUptime
         let cont = self.continuation
         let lastBuffer = self.lastBufferAt
+        let deliveredCount = self.delivered
+        // A rebuilt engine continues the same capture, so the count carries on.
 
         inputNode.installTap(
             onBus: 0,
@@ -145,6 +159,7 @@ actor MicrophoneCaptureService {
                 timestamp: elapsed
             )
             lastBuffer.withLock { $0 = Date() }
+            deliveredCount.withLock { $0 += 1 }
             cont?.yield(tagged)
         }
 
@@ -233,7 +248,45 @@ actor MicrophoneCaptureService {
             return false
         }
         recoveryAttempts += 1
+        return rebuildEngine(
+            success: "Mic capture recovered (\(reason)) — attempt \(recoveryAttempts)",
+            failure: "Mic capture recovery failed (\(reason))"
+        )
+    }
 
+    /// Move a live capture to another microphone. The call app this recording
+    /// follows changed its input — Teams opens the built-in mic and moves to
+    /// the chosen one a few seconds later, and the 10 s auto-start debounce
+    /// lands inside that window — so the recording moves with it. Same
+    /// continuation and timeline; consumers see a format change at most.
+    /// Returns false when nothing needed doing or the rebuild failed.
+    @discardableResult
+    func switchDevice(to uid: String, reason: String) -> Bool {
+        guard isCapturing else { return false }
+        guard uid != requestedDeviceUID else { return false }
+        let previous = requestedDeviceUID
+        requestedDeviceUID = uid
+        let switched = rebuildEngine(
+            success: "Mic capture moved to \(uid) (\(reason))",
+            failure: "Mic capture could not move to \(uid) (\(reason))"
+        )
+        if !switched {
+            // Stay on the device that was delivering rather than one that
+            // refused to start; the next rebuild would otherwise retry it.
+            requestedDeviceUID = previous
+            rebuildEngine(
+                success: "Mic capture back on \(previous ?? "the default device")",
+                failure: "Mic capture could not return to \(previous ?? "the default device")"
+            )
+        }
+        return switched
+    }
+
+    /// Tears down the current engine and builds a fresh one against
+    /// `requestedDeviceUID`, feeding the same continuation. Shared by recovery
+    /// and device switching so both rebuild identically.
+    @discardableResult
+    private func rebuildEngine(success: String, failure: String) -> Bool {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
@@ -242,17 +295,11 @@ actor MicrophoneCaptureService {
             let engine = try buildEngine()
             audioEngine = engine
             observeConfigurationChanges(on: engine)
-            LogManager.send(
-                "Mic capture recovered (\(reason)) — attempt \(recoveryAttempts)",
-                category: .audio
-            )
+            if isSuspended { engine.pause() }
+            LogManager.send(success, category: .audio)
             return true
         } catch {
-            LogManager.send(
-                "Mic capture recovery failed (\(reason)): \(error.localizedDescription)",
-                category: .audio,
-                level: .warning
-            )
+            LogManager.send("\(failure): \(error.localizedDescription)", category: .audio, level: .warning)
             return false
         }
     }
@@ -265,12 +312,14 @@ actor MicrophoneCaptureService {
 
     func suspendCapture() {
         guard isCapturing else { return }
+        isSuspended = true
         audioEngine?.pause()
         LogManager.send("Microphone capture suspended", category: .audio)
     }
 
     func resumeCapture() {
         guard isCapturing, let engine = audioEngine else { return }
+        isSuspended = false
         try? engine.start()
         LogManager.send("Microphone capture resumed", category: .audio)
     }

@@ -28,6 +28,7 @@ struct GreyEminenceApp: App {
             // `.help(...)` so a one-second hover shows the control's name.
             "NSInitialToolTipDelay": 1000
         ])
+        AIModelCatalog.migrateStoredDefaults()
 
         let delegate = SparkleUpdaterDelegate()
         self.updaterDelegate = delegate
@@ -77,7 +78,7 @@ struct GreyEminenceApp: App {
         // exactly what V1→V2 is. Migration stages still exist in the plan
         // type for documentation and for future non-additive changes that
         // genuinely need custom handlers.
-        let schema = Schema(versionedSchema: SchemaV26.self)
+        let schema = Schema(versionedSchema: SchemaV28.self)
         let config = ModelConfiguration(
             "GreyEminence",
             schema: schema,
@@ -122,7 +123,21 @@ struct GreyEminenceApp: App {
                         appEnvironment.configure(modelContext: container.mainContext)
                         UsageRecorder.shared.configure(container: container)
                         seedInterviewDefaults(in: container.mainContext)
-                        StoreBackupService.runIfNeeded(for: container)
+                        // Off the main thread and visible. It copies the
+                        // whole store plus its write-ahead log — a hundred
+                        // megabytes and more as the library grows — and it was
+                        // doing that inline in `onAppear`, so the first launch
+                        // of each day froze on a file copy with nothing on
+                        // screen to say why.
+                        if let storeURL = container.configurations.first?.url {
+                            Task { @MainActor in
+                                await TransientActivityCoordinator.shared.runAsync("Backing up your meetings…") {
+                                    await Task.detached(priority: .utility) {
+                                        StoreBackupService.runIfNeeded(storeURL: storeURL)
+                                    }.value
+                                }
+                            }
+                        }
                         ReProcessingQueue.shared.configure(
                             modelContainer: container,
                             recordingViewModel: recordingViewModel

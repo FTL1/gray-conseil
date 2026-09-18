@@ -27,6 +27,16 @@ actor AudioFileWriter {
     /// interleaved / >2ch / Int16; AAC preflight rejects those with
     /// `kExtAudioFileError_MaxPacketSizeUnknown` (-66567).
     private var startedFormat: AVAudioFormat?
+    /// Set when buffers cannot go straight to the file: the device's own
+    /// format was refused by the encoder, or the capture moved to another
+    /// microphone mid-recording and the new device speaks a different
+    /// format. Either way the file stays in the format it was opened with.
+    private var converter: AVAudioConverter?
+    /// The format buffers currently arrive in. A buffer in any other format
+    /// re-derives `converter`; see `adoptInputFormat`.
+    private var acceptedInputFormat: AVAudioFormat?
+    /// Reused across writes; see `convertIfNeeded`.
+    private var conversionBuffer: AVAudioPCMBuffer?
     /// Rolling count of write failures. Callers use this to detect a persistent
     /// problem (e.g. full disk, encoder-format mismatch) and stop recording
     /// before filling the log with silent-failure noise.
@@ -46,9 +56,40 @@ actor AudioFileWriter {
     }
 
     func start(inputFormat: AVAudioFormat) throws {
-        let writeFormat = Self.writeableFormat(from: inputFormat)
-        try Self.preflightEncoder(for: writeFormat)
+        // The device format is preferred — writing buffers straight through
+        // avoids a conversion per buffer. But an aggregate device can present
+        // something the AAC encoder refuses, and refusing to record at all is
+        // a far worse outcome than resampling: the recording is unrepeatable,
+        // and without audio there is no re-transcription and no diarization.
+        var writeFormat = inputFormat
+        do {
+            try Self.preflightEncoder(for: inputFormat)
+            converter = nil
+        } catch {
+            let fallback = Self.fallbackFormat(for: inputFormat)
+            do {
+                try Self.preflightEncoder(for: fallback)
+            } catch {
+                throw AudioFileWriterError.encoderPreflightFailed(
+                    "\(Self.describe(inputFormat)) and fallback \(Self.describe(fallback)) both rejected: \(error.localizedDescription)"
+                )
+            }
+            guard let made = AVAudioConverter(from: inputFormat, to: fallback) else {
+                throw AudioFileWriterError.encoderPreflightFailed(
+                    "\(Self.describe(inputFormat)) rejected and no converter to \(Self.describe(fallback))"
+                )
+            }
+            converter = made
+            writeFormat = fallback
+            LogManager.send(
+                "Audio encoder rejected \(Self.describe(inputFormat)) — recording via \(Self.describe(fallback)) instead",
+                category: .audio,
+                level: .warning
+            )
+        }
         startedFormat = writeFormat
+        acceptedInputFormat = inputFormat
+
         // If we're resuming an interrupted recording, the base URL and/or
         // its part siblings may already exist on disk from the prior session.
         // Writing into the base URL via AVAudioFile(forWriting:) would truncate
@@ -57,7 +98,11 @@ actor AudioFileWriter {
         chunkIndex = Self.nextChunkIndex(base: baseURL)
         // Previously-existing chunks are preserved but not tracked as ours;
         // callers can enumerate them with `Self.existingChunkURLs(base:)`.
-        try openChunk(inputFormat: inputFormat)
+        //
+        // `writeFormat`, not `inputFormat`: when a converter is in play the
+        // buffers reaching the file are in the fallback format, and opening
+        // the file against the device format would mismatch every write.
+        try openChunk(inputFormat: writeFormat)
     }
 
     /// Verify the encoder accepts `inputFormat` by writing a throwaway silent
@@ -103,8 +148,11 @@ actor AudioFileWriter {
             throw AudioFileWriterError.notStarted
         }
         do {
-            let toWrite = try converted(buffer)
-            try audioFile.write(from: toWrite)
+            if let accepted = acceptedInputFormat, buffer.format != accepted {
+                try adoptInputFormat(buffer.format)
+            }
+            try audioFile.write(from: try convertIfNeeded(buffer))
+
             consecutiveWriteFailures = 0
         } catch {
             consecutiveWriteFailures += 1
@@ -112,6 +160,101 @@ actor AudioFileWriter {
             lastWriteError = error.localizedDescription
             throw error
         }
+    }
+
+    /// The capture switched microphones under us — Teams moved from the
+    /// built-in mic to the Yeti, or the Yeti was unplugged — and buffers now
+    /// arrive in a different format. AVAudioFile refuses a buffer that does
+    /// not match the file, so from here on they are converted into the format
+    /// the chunk was opened with. One file, one format, no gap.
+    private func adoptInputFormat(_ format: AVAudioFormat) throws {
+        guard let target = startedFormat else { throw AudioFileWriterError.notStarted }
+        if format == target {
+            converter = nil
+        } else {
+            guard let made = AVAudioConverter(from: format, to: target) else {
+                throw AudioFileWriterError.encoderPreflightFailed(
+                    "no converter from \(Self.describe(format)) to \(Self.describe(target))"
+                )
+            }
+            made.channelMap = Self.channelMap(from: format.channelCount, to: target.channelCount)
+            converter = made
+        }
+        LogManager.send(
+            "Audio now arriving as \(Self.describe(format)) (was \(Self.describe(acceptedInputFormat ?? format))) — writing on as \(Self.describe(target))",
+            category: .audio
+        )
+        acceptedInputFormat = format
+    }
+
+    /// Output channel → input channel. A mono microphone replacing a stereo
+    /// one fills both file channels rather than leaving the right side
+    /// silent; extra input channels beyond the file's are dropped.
+    nonisolated static func channelMap(from input: AVAudioChannelCount, to output: AVAudioChannelCount) -> [NSNumber] {
+        (0..<Int(output)).map { NSNumber(value: min($0, Int(input) - 1)) }
+    }
+
+    /// Resample into the format the encoder accepted, when the device's own
+    /// format was refused or has changed since the file was opened.
+    private func convertIfNeeded(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let converter, let target = startedFormat else { return buffer }
+
+        let ratio = target.sampleRate / buffer.format.sampleRate
+        // Round up and add a frame: a short output buffer silently truncates
+        // audio, and the slack costs nothing.
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+        // Kept between calls. Buffers arrive continuously for the length of
+        // the recording, and allocating one per buffer on the audio path is
+        // avoidable churn; it only grows when a larger input turns up.
+        if conversionBuffer == nil || conversionBuffer!.frameCapacity < capacity {
+            conversionBuffer = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity)
+        }
+        guard let output = conversionBuffer else {
+            throw AudioFileWriterError.encoderPreflightFailed("conversion buffer alloc failed")
+        }
+        output.frameLength = 0
+
+        var supplied = false
+        var conversionError: NSError?
+        converter.convert(to: output, error: &conversionError) { _, status in
+            // One buffer in, then tell the converter the input is exhausted;
+            // returning the same buffer twice duplicates audio.
+            if supplied {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+        if let conversionError { throw conversionError }
+        return output
+    }
+
+    /// A format the AAC encoder is known to accept: mono, a standard rate,
+    /// non-interleaved float.
+    nonisolated static func fallbackFormat(for inputFormat: AVAudioFormat) -> AVAudioFormat {
+        // Keep the device rate when it's one AAC actually supports, so speech
+        // isn't resampled for no reason; otherwise take the nearest standard.
+        //
+        // Starts at 16 kHz rather than 8: the encoder refuses AAC-LC below
+        // that at these bitrates, and a fallback the encoder also rejects is
+        // no fallback at all. 16 kHz is also what transcription resamples to,
+        // so nothing downstream loses anything.
+        let supported: [Double] = [16000, 22050, 24000, 32000, 44100, 48000]
+        let rate = supported.contains(inputFormat.sampleRate)
+            ? inputFormat.sampleRate
+            : supported.min(by: { abs($0 - inputFormat.sampleRate) < abs($1 - inputFormat.sampleRate) }) ?? 48000
+        return AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: rate,
+            channels: 1,
+            interleaved: false
+        ) ?? AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false)!
+    }
+
+    nonisolated static func describe(_ format: AVAudioFormat) -> String {
+        "\(Int(format.sampleRate))Hz, \(format.channelCount)ch, \(format.isInterleaved ? "interleaved" : "planar")"
     }
 
     /// Close the current chunk (finalizing AAC metadata so it's playable) and
@@ -158,6 +301,13 @@ actor AudioFileWriter {
     private func openChunk(inputFormat: AVAudioFormat) throws {
         let writeFormat = Self.writeableFormat(from: inputFormat)
         let url = Self.chunkURL(base: baseURL, index: chunkIndex)
+        // Creating the folder belongs here, at the moment of writing. Deriving
+        // it from the audio URL instead meant every read that merely asked
+        // "is there audio for this meeting" created an empty directory.
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         audioFile = try AVAudioFile(
             forWriting: url,
             settings: Self.encoderSettings(for: writeFormat),
@@ -265,6 +415,7 @@ actor AudioFileWriter {
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: writeable.sampleRate,
             AVNumberOfChannelsKey: channels,
+
             AVEncoderBitRateKey: bitrate,
         ]
     }

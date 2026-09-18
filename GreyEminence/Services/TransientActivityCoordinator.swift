@@ -21,11 +21,28 @@ final class TransientActivityCoordinator {
     /// finishes before the bar collapses.
     private static let completionVisibleDuration: TimeInterval = 2.0
 
-    struct Activity: Identifiable, Equatable {
-        let id = UUID()
-        let label: String
-        let startedAt: Date
+    /// Countable progress for an activity that knows how much work it has.
+    /// Optional because most transient work is genuinely indeterminate — a
+    /// spinner is the honest indicator for a maintenance sweep, and a fake
+    /// bar would be worse than none.
+    struct Progress: Equatable {
+        var completed: Int
+        var total: Int
 
+        var fraction: Double {
+            total > 0 ? min(1, Double(completed) / Double(total)) : 0
+        }
+    }
+
+    struct Activity: Identifiable, Equatable {
+        var id = UUID()
+        var label: String
+        let startedAt: Date
+        var progress: Progress?
+
+        /// Identity only. Progress ticks reassign `current` many times a
+        /// second, and equality drives the bar's appear/disappear animation —
+        /// comparing progress too would re-animate the whole bar on every tick.
         static func == (lhs: Activity, rhs: Activity) -> Bool { lhs.id == rhs.id }
     }
 
@@ -62,6 +79,32 @@ final class TransientActivityCoordinator {
             guard let self, self.lastCompleted == activity else { return }
             self.lastCompleted = nil
         }
+    }
+
+    /// Change the label of the running activity.
+    ///
+    /// A long job made of distinct steps reads better as the step it is on
+    /// than as one unchanging sentence — and a label that never changes is
+    /// how a working app and a hung one look identical.
+    func retitle(_ label: String) {
+        guard let current else { return }
+        self.current = Activity(
+            id: current.id,
+            label: label,
+            startedAt: current.startedAt,
+            progress: current.progress
+        )
+    }
+
+    /// Report progress for whatever is currently running.
+    ///
+    /// Addressed to "the running activity" rather than to a handle because
+    /// only one transient activity is ever in flight — the re-processing
+    /// queue, which genuinely overlaps, has its own bar. A late tick from a
+    /// finished activity lands after `current` is nil and is dropped.
+    func setProgress(completed: Int, total: Int) {
+        guard current != nil, total > 0 else { return }
+        current?.progress = Progress(completed: completed, total: total)
     }
 
     private func beginActivity(label: String) -> Activity {

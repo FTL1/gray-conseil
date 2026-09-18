@@ -18,6 +18,15 @@ struct EditableTranscriptSegmentRow: View {
     var isPlayingLine: Bool = false
     var speakerActions: SpeakerBadgeActions = SpeakerBadgeActions()
     var highlightQuery: String = ""
+    /// Click the speaker badge to show only that voice's lines.
+    var onFilterSpeaker: ((Speaker) -> Void)?
+    /// Play (or stop) the recorded audio behind this segment. Only offered
+    /// for completed meetings whose audio is on disk to be read.
+    var onPlayAudio: (() -> Void)?
+    var isPlayingAudio: Bool = false
+    /// Why the last play attempt for this segment failed, shown in the
+    /// button's tooltip so a missing file explains itself.
+    var playbackFailure: String?
 
     @State private var isEditingText = false
     @State private var editedText: String = ""
@@ -38,6 +47,25 @@ struct EditableTranscriptSegmentRow: View {
                         .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.plain)
+            }
+
+            // Play the audio behind this line — the way to tell a bad
+            // recording from a bad transcription of a good one.
+            if let onPlayAudio {
+                Button {
+                    onPlayAudio()
+                } label: {
+                    Image(systemName: isPlayingAudio ? "stop.circle.fill" : "play.circle")
+                        .font(.caption)
+                        .foregroundStyle(
+                            isPlayingAudio ? Color.accentColor
+                                : playbackFailure != nil ? Color.orange : Color.secondary
+                        )
+                        .frame(width: 14)
+                }
+                .buttonStyle(.plain)
+                .help(playbackFailure ?? (isPlayingAudio ? "Stop" : "Play this segment's audio"))
+                .contextMenu { playbackTrackMenu }
             }
 
             // Timestamp — clickable when a screen-share player is present
@@ -81,6 +109,23 @@ struct EditableTranscriptSegmentRow: View {
                     .help("Edited")
             }
 
+            // A mis-hearing the correction pass fixed. The original is one
+            // hover away, which is what makes an automatic change acceptable.
+            if !segment.isEdited, let original = segment.originalText, original != segment.text {
+                Image(systemName: "sparkles")
+                    .font(.caption2)
+                    .foregroundStyle(.teal)
+                    .help("Corrected by AI. Recogniser heard: \u{201C}\(original)\u{201D}")
+            }
+
+            // The recogniser itself was unsure — worth pressing play.
+            if segment.confidence < TranscriptCorrectionService.lowConfidenceThreshold {
+                Circle()
+                    .fill(segment.confidence < 0.3 ? Color.red : Color.yellow)
+                    .frame(width: 6, height: 6)
+                    .help(String(format: "Transcriber confidence %.0f%% — worth a listen", segment.confidence * 100))
+            }
+
             // Text content
             textContentView
 
@@ -90,7 +135,10 @@ struct EditableTranscriptSegmentRow: View {
         .padding(.horizontal, 4)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(isSelected ? Color.accentColor.opacity(0.08) : .clear)
+                .fill(
+                    isSelected ? Color.accentColor.opacity(0.08)
+                        : isPlayingAudio ? Color.accentColor.opacity(0.05) : .clear
+                )
         )
         .contextMenu { contextMenuItems }
         .confirmationDialog(
@@ -103,6 +151,23 @@ struct EditableTranscriptSegmentRow: View {
             }
         } message: {
             Text("\"\(segment.text.prefix(80))...\"")
+        }
+    }
+
+    // MARK: - Playback track
+
+    /// Which recording to play. Lives on the play button rather than in a
+    /// toolbar because it is only meaningful next to the thing it changes.
+    @ViewBuilder
+    private var playbackTrackMenu: some View {
+        let player = SegmentAudioPlayer.shared
+        Picker("Play from", selection: Binding(
+            get: { player.track },
+            set: { player.track = $0 }
+        )) {
+            ForEach(SegmentAudioPlayer.Track.allCases) { track in
+                Text(track.label).tag(track)
+            }
         }
     }
 
@@ -141,6 +206,23 @@ struct EditableTranscriptSegmentRow: View {
             merged.onSetAsMe = { changeSpeakerForAll(to: Speaker.resolvedMe()) }
         }
         return merged
+    }
+
+    /// The badge itself. A plain button when filtering is available, so the
+    /// right-click menu (change / rename speaker) keeps working either way.
+    @ViewBuilder
+    private var badgeButton: some View {
+        if let onFilterSpeaker {
+            Button {
+                onFilterSpeaker(segment.speaker)
+            } label: {
+                SpeakerBadge(speaker: segment.speaker)
+            }
+            .buttonStyle(.plain)
+            .help("Show only \(segment.speaker.displayName)\u{2019}s lines")
+        } else {
+            SpeakerBadge(speaker: segment.speaker)
+        }
     }
 
     // MARK: - Speaker Rename Popover

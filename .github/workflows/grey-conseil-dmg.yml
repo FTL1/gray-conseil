@@ -15,7 +15,7 @@ env:
   SCHEME: GreyEminence
   GC_PRODUCT_NAME: "Grey Conseil"
   GC_BUNDLE_ID: com.ftl1.greyeminence
-  GC_MARKETING_VERSION: "0.28.4-public.1"
+  GC_MARKETING_VERSION: "0.28.4-public.2"
 
 jobs:
   build-dmg:
