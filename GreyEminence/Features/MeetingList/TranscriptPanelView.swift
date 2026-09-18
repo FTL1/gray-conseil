@@ -786,7 +786,7 @@ struct TranscriptPanelView: View {
                     onSeekToTime: onSeekToTime,
                     onPlayLine: {
                         let nextStart = sortedSegments.drop(while: { $0.id != segment.id }).dropFirst().first?.startTime
-                        SegmentAudioPlayer.shared.toggle(segment: segment, meeting: meeting, nextStart: nextStart)
+                        SegmentAudioPlayer.shared.toggle(segment, in: meeting)
                         speakerRevision += 1
                     },
                     isPlayingLine: SegmentAudioPlayer.shared.playingSegmentID == segment.id,
