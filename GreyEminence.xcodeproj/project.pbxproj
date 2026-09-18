@@ -947,18 +947,6 @@
 		327AAE184D33564DAA89A038 /* Tasks */ = {
 			isa = PBXGroup;
 			children = (
-				AB15D81356DE9D9921BFB86E /* AIModelCatalog.swift */,
-				1D145E405C7257B26AE535CC /* SegmentAudioLocator.swift */,
-				36F3123F8BB7B18E81F6A571 /* AudioDeviceInfo.swift */,
-				D257575695366B987CE83D44 /* CaptureLevelMeter.swift */,
-				9F37B255A20A85E697F60C1B /* SpeakerRepairService.swift */,
-				81F1675AF4F7AABCEAF8A2B0 /* SpeakerIdentification.swift */,
-				2E23563C728F61DE0193C977 /* SpeakerAlignment.swift */,
-				AC058C2DAD60CC937765BDEC /* HindsightReassignment.swift */,
-				48769B151CBDBEADF55855B0 /* SpeakerIdentityService.swift */,
-				BE840866FD98EF1AC85A139A /* VoiceProfileStore.swift */,
-				FE1B075975099FCAA9839C57 /* VoiceSignature.swift */,
-				027C019AD9779B5CB4AA6B4F /* TranscriptCorrectionService.swift */,
 				B7D4A91E2C8F3056E1B0A947 /* AllTasksView.swift */,
 				24C7D9E06F1B2284A3B5D7A6 /* TaskFindControls.swift */,
 				DDA08488A6C4DDF53905B1B6 /* TaskDetailView.swift */,
@@ -970,6 +958,9 @@
 		392B84D25C99CD062D834C3B /* Audio */ = {
 			isa = PBXGroup;
 			children = (
+				D257575695366B987CE83D44 /* CaptureLevelMeter.swift */,
+				36F3123F8BB7B18E81F6A571 /* AudioDeviceInfo.swift */,
+				1D145E405C7257B26AE535CC /* SegmentAudioLocator.swift */,
 				D5928000A283F6255762E577 /* Models */,
 				23D9772408B00E7D046004B1 /* AudioChunkValidator.swift */,
 				F46A1001 /* AudioLevelMeter.swift */,
@@ -1016,6 +1007,7 @@
 		4D7D79D83BC93637D07DEE04 /* AI */ = {
 			isa = PBXGroup;
 			children = (
+				AB15D81356DE9D9921BFB86E /* AIModelCatalog.swift */,
 				4D73DBC02E9A067276E806B8 /* AIClientFactory.swift */,
 				8D5C025F672896B9EBCD995D /* AIClientProtocol.swift */,
 				B66D41A4DDC8876D46E90AD7 /* AIIntelligenceService.swift */,
@@ -1184,7 +1176,6 @@
 		60B5BF7AC78ADE3E01B14423 /* WhatsNew */ = {
 			isa = PBXGroup;
 			children = (
-				6EB232E11926FD1EE8B24493 /* TranscriptSpeakerRoster.swift */,
 				DDBE2B5B6C2497EB697EA018 /* FeatureDiscovery.swift */,
 				DC89881F5FBFA4FDFBF5D015 /* FeatureHighlight.swift */,
 				E5DC67A9A0F33BB299F55999 /* WhatsNewSheet.swift */,
@@ -1384,6 +1375,7 @@
 		B22741CCEACD22E7DF8980D9 /* MeetingList */ = {
 			isa = PBXGroup;
 			children = (
+				6EB232E11926FD1EE8B24493 /* TranscriptSpeakerRoster.swift */,
 				5A42AA08DB1A00AE08C7884B /* ArchiveView.swift */,
 				A4C4E001A82C4D11A90100A5 /* ArchiveExtractSheet.swift */,
 				CCD46DD530F5CE11FE209E36 /* DedupDebugRow.swift */,
@@ -1440,6 +1432,14 @@
 		C55C0EF6982FAB185A23C343 /* Transcription */ = {
 			isa = PBXGroup;
 			children = (
+				027C019AD9779B5CB4AA6B4F /* TranscriptCorrectionService.swift */,
+				FE1B075975099FCAA9839C57 /* VoiceSignature.swift */,
+				BE840866FD98EF1AC85A139A /* VoiceProfileStore.swift */,
+				48769B151CBDBEADF55855B0 /* SpeakerIdentityService.swift */,
+				AC058C2DAD60CC937765BDEC /* HindsightReassignment.swift */,
+				2E23563C728F61DE0193C977 /* SpeakerAlignment.swift */,
+				81F1675AF4F7AABCEAF8A2B0 /* SpeakerIdentification.swift */,
+				9F37B255A20A85E697F60C1B /* SpeakerRepairService.swift */,
 				0967272565AFAF7A394DB16E /* FluidAsrService.swift */,
 				72F471A4457C433C3E6F503D /* HighQualityTranscriber.swift */,
 				00113CB03ECCACD1B6516101 /* ModelDownloadManager.swift */,
