@@ -898,7 +898,7 @@ struct ContentView: View {
                         }
                     }
                 }
-            }
+            })
         case .activityLog:
             LogView()
         case .settings:
