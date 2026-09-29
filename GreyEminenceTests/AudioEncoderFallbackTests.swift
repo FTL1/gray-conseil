@@ -62,6 +62,47 @@ final class AudioEncoderFallbackTests: XCTestCase {
         XCTAssertNoThrow(try AudioFileWriter.preflightEncoder(for: format(44100, 2)))
     }
 
+    func testInterleavedSystemTapBecomesPlanarForAAC() {
+        // ScreenCaptureKit system audio is 48 kHz stereo interleaved. AAC
+        // files are opened planar; writing the tap buffer as-is is avfaudio -50.
+        let tap = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48000,
+            channels: 2,
+            interleaved: true
+        )!
+        let writeable = AudioFileWriter.writeableFormat(from: tap)
+        XCTAssertFalse(writeable.isInterleaved)
+        XCTAssertEqual(writeable.channelCount, 2)
+        XCTAssertEqual(writeable.sampleRate, 48000)
+        XCTAssertEqual(writeable.commonFormat, .pcmFormatFloat32)
+        XCTAssertFalse(AudioFileWriter.formatsMatch(tap, writeable))
+    }
+
+    func testInterleavedSystemTapWritesAReadableFile() async throws {
+        let tap = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48000,
+            channels: 2,
+            interleaved: true
+        )!
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AudioEncoderFallback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("sys.m4a")
+        let writer = AudioFileWriter(outputURL: url)
+        try await writer.start(inputFormat: tap)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: tap, frameCapacity: 512) else {
+            return XCTFail("buffer alloc")
+        }
+        buffer.frameLength = 512
+        try await writer.write(buffer)
+        await writer.stop()
+        let file = try AVAudioFile(forReading: url)
+        XCTAssertGreaterThan(file.length, 0)
+    }
+
     // MARK: - Settings
 
     func testEncoderNeverAsksForMoreThanStereo() {

@@ -56,15 +56,14 @@ actor AudioFileWriter {
     }
 
     func start(inputFormat: AVAudioFormat) throws {
-        // The device format is preferred — writing buffers straight through
-        // avoids a conversion per buffer. But an aggregate device can present
-        // something the AAC encoder refuses, and refusing to record at all is
-        // a far worse outcome than resampling: the recording is unrepeatable,
-        // and without audio there is no re-transcription and no diarization.
-        var writeFormat = inputFormat
+        // AAC files are always opened in writeableFormat (planar f32, 1–2 ch).
+        // ScreenCaptureKit's system tap is 48 kHz stereo *interleaved*; writing
+        // that buffer into a planar file is avfaudio -50 and the recording
+        // auto-stops. Preflight also probes writeableFormat, so success must
+        // not be taken as "the tap format can go straight to the encoder".
+        var writeFormat = Self.writeableFormat(from: inputFormat)
         do {
-            try Self.preflightEncoder(for: inputFormat)
-            converter = nil
+            try Self.preflightEncoder(for: writeFormat)
         } catch {
             let fallback = Self.fallbackFormat(for: inputFormat)
             do {
@@ -74,12 +73,6 @@ actor AudioFileWriter {
                     "\(Self.describe(inputFormat)) and fallback \(Self.describe(fallback)) both rejected: \(error.localizedDescription)"
                 )
             }
-            guard let made = AVAudioConverter(from: inputFormat, to: fallback) else {
-                throw AudioFileWriterError.encoderPreflightFailed(
-                    "\(Self.describe(inputFormat)) rejected and no converter to \(Self.describe(fallback))"
-                )
-            }
-            converter = made
             writeFormat = fallback
             LogManager.send(
                 "Audio encoder rejected \(Self.describe(inputFormat)) — recording via \(Self.describe(fallback)) instead",
@@ -89,6 +82,21 @@ actor AudioFileWriter {
         }
         startedFormat = writeFormat
         acceptedInputFormat = inputFormat
+        if Self.formatsMatch(inputFormat, writeFormat) {
+            converter = nil
+        } else {
+            guard let made = AVAudioConverter(from: inputFormat, to: writeFormat) else {
+                throw AudioFileWriterError.encoderPreflightFailed(
+                    "no converter from \(Self.describe(inputFormat)) to \(Self.describe(writeFormat))"
+                )
+            }
+            made.channelMap = Self.channelMap(from: inputFormat.channelCount, to: writeFormat.channelCount)
+            converter = made
+            LogManager.send(
+                "Audio tap \(Self.describe(inputFormat)) converting to \(Self.describe(writeFormat)) for AAC",
+                category: .audio
+            )
+        }
 
         // If we're resuming an interrupted recording, the base URL and/or
         // its part siblings may already exist on disk from the prior session.
@@ -197,7 +205,14 @@ actor AudioFileWriter {
     /// Resample into the format the encoder accepted, when the device's own
     /// format was refused or has changed since the file was opened.
     private func convertIfNeeded(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
-        guard let converter, let target = startedFormat else { return buffer }
+        guard let target = startedFormat else { return buffer }
+        if Self.formatsMatch(buffer.format, target) { return buffer }
+        // Converter is nil only when start() saw a matching format. If a
+        // later buffer disagrees, convert once rather than writing it into
+        // the file (avfaudio -50).
+        guard let converter else {
+            return try Self.convertBuffer(buffer, to: target)
+        }
 
         let ratio = target.sampleRate / buffer.format.sampleRate
         // Round up and add a frame: a short output buffer silently truncates

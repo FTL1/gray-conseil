@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "system-tap-interleaved-write",
+            version: "0.28.4-public.3",
+            title: "Teams / Zoom recording stays up",
+            summary: "Far-side system audio is converted to a format AAC can write. Recordings no longer stop a second after they start with a Core Audio -50 error.",
+            systemImage: "mic.fill",
+            tint: .indigo,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "matt-audio-speaker-port",
             version: "0.28.4-public.2",
             title: "Far-side audio, hang-up stop, speaker repair",
