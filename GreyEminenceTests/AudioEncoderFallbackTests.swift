@@ -80,20 +80,22 @@ final class AudioEncoderFallbackTests: XCTestCase {
     }
 
     func testInterleavedSystemTapWritesAReadableFile() async throws {
-        let tap = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 48000,
-            channels: 2,
-            interleaved: true
-        )!
+        func tapFormat() -> AVAudioFormat {
+            AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: 48000,
+                channels: 2,
+                interleaved: true
+            )!
+        }
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("AudioEncoderFallback-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("sys.m4a")
         let writer = AudioFileWriter(outputURL: url)
-        try await writer.start(inputFormat: tap)
-        guard let buffer = AVAudioPCMBuffer(pcmFormat: tap, frameCapacity: 512) else {
+        try await writer.start(inputFormat: tapFormat())
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: tapFormat(), frameCapacity: 512) else {
             return XCTFail("buffer alloc")
         }
         buffer.frameLength = 512
