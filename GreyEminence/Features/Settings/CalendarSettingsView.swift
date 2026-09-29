@@ -32,7 +32,7 @@ struct CalendarSettingsView: View {
 
                 Text(calendarService.accessStatusText)
                     .font(.caption)
-                    .foregroundStyle(calendarService.authorizationState == .authorized ? .secondary : .orange)
+                    .foregroundStyle(calendarService.authorizationState == .authorized ? Color.secondary : Color.orange)
 
                 HStack {
                     Button("Request Calendar Access") {
@@ -55,9 +55,11 @@ struct CalendarSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    matchSubheader
-                    calendarToggleList(eventKitCalendars)
-                    nearbyEventsBlock
+                    Group {
+                        matchSubheader
+                        calendarToggleList(eventKitCalendars)
+                        nearbyEventsBlock
+                    }
                 }
             } header: {
                 Label("On this Mac", systemImage: "menubar.dock.rectangle")
@@ -73,10 +75,12 @@ struct CalendarSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !graphUnused {
-                    if graphAuth.isConnected {
-                        connectedRows
-                    } else {
-                        disconnectedRows
+                    Group {
+                        if graphAuth.isConnected {
+                            connectedRows
+                        } else {
+                            disconnectedRows
+                        }
                     }
                 }
             } header: {
