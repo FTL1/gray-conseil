@@ -54,6 +54,17 @@ final class SegmentAudioLocatorTests: XCTestCase {
         XCTAssertEqual(window.upperBound, 603 + SegmentAudioLocator.padding, accuracy: 0.001)
     }
 
+    func testWindowStopsAtTheNextSnippet() {
+        let window = SegmentAudioLocator.window(
+            segmentStart: 10,
+            segmentEnd: 40,
+            offset: 0,
+            nextStart: 12
+        )
+        XCTAssertEqual(window.lowerBound, 10 - SegmentAudioLocator.padding, accuracy: 0.001)
+        XCTAssertEqual(window.upperBound, 12 + SegmentAudioLocator.padding, accuracy: 0.001)
+    }
+
     func testWindowNeverStartsBeforeZeroAndNeverCollapses() {
         let atStart = SegmentAudioLocator.window(segmentStart: 0.1, segmentEnd: 0.1, offset: 0)
         XCTAssertEqual(atStart.lowerBound, 0)

@@ -80,9 +80,84 @@ final class VoicePrintTests: XCTestCase {
 
         XCTAssertEqual(groups.thisMeeting.map(\.name), ["Alex", "Pat", "Jordan"])
         XCTAssertTrue(groups.thisMeeting.first { $0.name == "Pat" }?.isThisVoice == true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Alex" }?.isMe, true)
+        XCTAssertTrue(groups.thisMeeting.first { $0.name == "Alex" }?.asSpeaker().isMe == true)
+        XCTAssertNotEqual(groups.thisMeeting.first { $0.name == "Pat" }?.isMe, true)
         XCTAssertEqual(groups.priorSpeakers.map(\.name), ["Sam"])
         XCTAssertFalse(groups.thisMeeting.contains { $0.name == "Random" })
         XCTAssertFalse(groups.priorSpeakers.contains { $0.name == "Random" })
+    }
+
+    func testCollectionAppendsInsteadOfOverwriting() {
+        let contact = Contact(name: "Pat")
+        contact.addVoicePrint([1, 0, 0, 0, 0, 0, 0, 0], source: VoicePrintSource.session)
+        contact.addVoicePrint([0, 1, 0, 0, 0, 0, 0, 0], source: VoicePrintSource.session)
+        XCTAssertEqual(contact.voicePrintSampleCount, 2)
+        XCTAssertEqual(contact.voicePrintEmbeddings().count, 2)
+    }
+
+    func testCollectionSkipsNearDuplicate() {
+        let contact = Contact(name: "Pat")
+        let sample = [Float](repeating: 0.4, count: 8)
+        contact.addVoicePrint(sample, source: VoicePrintSource.session)
+        contact.addVoicePrint(sample, source: VoicePrintSource.session)
+        XCTAssertEqual(contact.voicePrintSampleCount, 1)
+    }
+
+    func testIsolationRemovesCollidingPrintsFromOthers() {
+        let me = Contact(name: "Alex")
+        let robert = Contact(name: "Robert")
+        let robertVoice: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        me.addVoicePrint(robertVoice, source: VoicePrintSource.enroll)
+        XCTAssertTrue(me.hasVoicePrint)
+        VoicePrintIsolation.isolate(robertVoice, owner: robert, among: [me, robert])
+        XCTAssertFalse(me.hasVoicePrint)
+        robert.addVoicePrint(robertVoice, source: VoicePrintSource.session)
+        XCTAssertTrue(robert.hasVoicePrint)
+    }
+
+    func testBestIdentityMatchDoesNotUseSamePersonAsRunnerUp() {
+        let probe: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        let a: [Float] = [0.99, 0.1, 0, 0, 0, 0, 0, 0]
+        let b: [Float] = [0.98, 0.12, 0, 0, 0, 0, 0, 0]
+        XCTAssertNil(
+            VoicePrintMatcher.bestMatch(
+                embedding: probe,
+                in: [(item: "jordan", embedding: a), (item: "sam", embedding: b)],
+                threshold: 0.5,
+                margin: 0.08
+            )
+        )
+        let hit = VoicePrintMatcher.bestIdentityMatch(
+            embedding: probe,
+            in: [(item: "jordan", embedding: a), (item: "jordan", embedding: b)],
+            identity: { $0 },
+            threshold: 0.5,
+            margin: 0.08
+        )
+        XCTAssertEqual(hit?.item, "jordan")
+    }
+
+    func testExpectedSpeakerUsesTheWholeCollection() {
+        let person = MeetingSpeakerRecovery.ExpectedSpeaker(
+            name: "Robert",
+            speaker: .other("Robert"),
+            contactID: nil,
+            embedding: [Float](repeating: 0.1, count: 8),
+            embeddings: [
+                [Float](repeating: 0.1, count: 8),
+                [Float](repeating: 0.9, count: 8)
+            ],
+            isMe: false,
+            isPreselected: true
+        )
+        XCTAssertEqual(person.allEmbeddings().count, 2)
+        XCTAssertTrue(person.hasVoicePrint)
+    }
+
+    func testLouderSlicePrefersHigherEnergy() {
+        XCTAssertEqual(VoicePrintEnrollment.louder([0.9, 0.9], [0.1, 0.1]), [0.9, 0.9])
+        XCTAssertEqual(VoicePrintEnrollment.rms([0, 0]), 0, accuracy: 0.0001)
     }
 
     @MainActor

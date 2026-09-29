@@ -167,7 +167,7 @@ struct SpeakerRosterBar: View {
                 roster.paintSeatID = painting ? nil : seat.id
             }
             if onEnrollVoicePrint != nil {
-                Button("Enroll voice print") {
+                Button("Save voice print from this meeting") {
                     onEnrollVoicePrint?(isolationTarget ?? seat.speaker)
                 }
             }

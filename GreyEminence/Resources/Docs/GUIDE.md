@@ -243,9 +243,9 @@ Click **Pat** in that list to tag this voice as Pat.
 **How**
 
 1. Tag the voice first if it is still `guest-N`.
-2. Right-click the badge or the chip → **Enroll voice print**.
-3. Wait. Live meetings use the in-memory print if they have spoken enough; otherwise the app listens to the saved recording (needs a few seconds of that person).
-4. The contact now has a print. People list shows a waveform. The contact card can **Remove voice print**.
+2. Right-click the badge or the chip → **Save voice print from this meeting**.
+3. Wait. The app listens to this meeting’s saved audio (mic and system) on that person’s lines.
+4. The contact now has another print in their collection. People list shows a waveform. The contact card can **Remove all voice prints**.
 
 **Next meeting:** Grey Conseil loads enrolled prints when recording starts. A matching guest is labeled with that person’s name instead of a new guest-N.
 
@@ -253,7 +253,7 @@ Click **Pat** in that list to tag this voice as Pat.
 
 - Enroll **Alex** from Alex’s menu to save your mic onto your profile.
 - You cannot enroll an unnamed guest. Pick someone first.
-- Enrolling again averages the new sample in (it gets better, it does not throw the old one away).
+- Saving again **adds** another stamp to that person (it does not overwrite). Re-analyze matches against the whole collection.
 - This is **same session + later sessions** for that contact. It is not magic on a terrible speakerphone.
 
 ### Hide / show a speaker
@@ -268,11 +268,11 @@ Unassigned leftover voices (unknown-1 / guest-1) stay on so you can identify the
 
 **Assigning after you hide someone:** only the lines still on screen change. Hidden speakers — including you — stay as they are. Select Visible, then Assign, or Merge.
 
-**Play** on a line plays that line’s saved audio. A merged line plays the whole range of audio for that text, not only the first fragment. **Merge** (Select two or more lines) joins them into one. Finished meetings also **auto-merge** consecutive lines from the same person (Settings → Transcript). Undo that from the transcript **⋯** menu.
+**Play** on a line plays that line’s saved audio, stopping at the next snippet. Right-click the play button to pick microphone, system audio, or both. **Merge** (Select two or more lines) joins them into one. Finished meetings also **auto-merge** consecutive lines from the same person (Settings → Transcript). Undo that from the transcript **⋯** menu.
 
 **Colors:** right-click a name → pick a swatch → **Lock this color**. Alex, Jordan, and Sam keep those colors in later meetings. If two people would share a color, the more common one keeps it.
 
-If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call (voice stamps show a waveform). The saved audio is matched against those stamps. Anyone who does not match becomes **unknown-1**, **unknown-2**…. Select one or more unknowns and assign them to a known person, a contact, or a typed name. A voice stamp is saved onto that contact. You stay you. Undo and revert are in **⋯**.
+If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call (every saved stamp is used, including ones captured from this meeting). Lines currently labeled as you are re-checked, so a remote voice that was stamped as you can be corrected. Anyone who does not match becomes **speaker-1**, **speaker-2**…. Select one or more unknowns and assign them to a known person, a contact, or a typed name. A voice stamp is **added** onto that contact. Undo and revert are in **⋯**.
 
 ### Right-click a speaker name
 
@@ -287,11 +287,11 @@ Works in the live transcript and in a finished meeting.
 | **Search this speaker’s comments** | Type in the box. The menu **stays open**. Matches highlight, you jump to the nearest hit, “2 of 7 matches.” Chevrons walk hits. |
 | **Hide this speaker** | Collapse their lines until you Show them. |
 | **Show only this speaker** | Isolate: only their lines. Different from **click the chip**, which hides them. |
-| **Set as Me** | This voice is you. |
-| **This meeting / Prior speakers** | Assign this voice to someone already known. |
+| **Set as** | Dropdown: you, this meeting’s speakers, or a contact. Fills **Rename** and assigns this voice. |
+| **This meeting / Prior speakers** | Click a name to assign this voice and fill **Rename**. |
 | **Link other contact…** | Full directory. |
 | **Save as new contact** | Creates a contact from the current display name. |
-| **Enroll voice print** | Saves this voice onto that person for later meetings. |
+| **Save voice print from this meeting** | Adds a stamp from this meeting’s audio to that person’s collection. |
 | **Recover guest-1, guest-2… from audio** | Only when the recording lumped every remote together. |
 
 ### Keeping the same person as the same guest

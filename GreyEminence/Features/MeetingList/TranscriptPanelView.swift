@@ -197,6 +197,7 @@ struct TranscriptPanelView: View {
                     },
                     onClose: { menuSpeaker = nil }
                 )
+                .id(speaker.identityKey.hideStubID)
                 .padding(12)
                 .frame(width: 300, alignment: .leading)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -398,7 +399,7 @@ struct TranscriptPanelView: View {
 
             exportTranscriptMenu
 
-            if meeting.segments.contains(where: { !$0.speaker.isMe }) {
+            if !meeting.segments.isEmpty {
                 Button {
                     reanalyzeResult = nil
                     showReanalyzeSheet = true
@@ -414,7 +415,7 @@ struct TranscriptPanelView: View {
                 }
                 .controlSize(.small)
                 .disabled(isRecoveringSpeakers)
-                .help("Pick who was on the call, match saved voice stamps, and label leftovers as speaker-1…. You stay you.")
+                .help("Pick who was on the call. Saved voice prints (including ones from this meeting) are matched, including lines currently labeled as you.")
             }
 
             Spacer(minLength: 8)
@@ -784,12 +785,16 @@ struct TranscriptPanelView: View {
                         toggleSelection(segment)
                     } : nil,
                     onSeekToTime: onSeekToTime,
-                    onPlayLine: {
+                    onPlayAudio: {
                         let nextStart = sortedSegments.drop(while: { $0.id != segment.id }).dropFirst().first?.startTime
-                        SegmentAudioPlayer.shared.toggle(segment, in: meeting)
+                        SegmentAudioPlayer.shared.toggle(segment, in: meeting, until: nextStart)
                         speakerRevision += 1
                     },
-                    isPlayingLine: SegmentAudioPlayer.shared.playingSegmentID == segment.id,
+                    isPlayingAudio: SegmentAudioPlayer.shared.playingSegmentID == segment.id,
+                    playbackFailure: {
+                        let failure = SegmentAudioPlayer.shared.failure
+                        return failure?.segmentID == segment.id ? failure?.message : nil
+                    }(),
                     speakerActions: speakerActions(for: segment.speaker, anchorID: segment.id),
                     highlightQuery: highlightQuery(for: segment)
                 )
@@ -824,6 +829,7 @@ struct TranscriptPanelView: View {
     }
 
     private func applySpeakerLink(_ person: SpeakerLinkPerson, to speaker: Speaker) {
+        let newSpeaker = person.asSpeaker()
         if let contactID = person.contactID,
            let contact = contacts.first(where: { $0.id == contactID }) {
             if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {
@@ -832,17 +838,13 @@ struct TranscriptPanelView: View {
             if !meeting.attendees.contains(where: { $0.id == contact.id }) {
                 meeting.attendees.append(contact)
             }
-            if !speaker.isMe,
-               let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-                changeSpeakerForAll(from: representative, to: .other(contact.name))
-            }
-            if !speaker.isMe { menuSpeaker = .other(contact.name) }
-            return
         }
         if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-            changeSpeakerForAll(from: representative, to: Speaker.renamed(from: speaker, displayName: person.name))
+            changeSpeakerForAll(from: representative, to: newSpeaker)
+        } else {
+            applyRenameFromMenu(current: speaker, to: newSpeaker, anchorID: menuAnchorID)
         }
-        if !speaker.isMe { menuSpeaker = .other(person.name) }
+        menuSpeaker = newSpeaker
     }
 
     private func voicePrintState(for speaker: Speaker) -> VoicePrintUIState {
@@ -854,7 +856,11 @@ struct TranscriptPanelView: View {
         }
         let contact = VoicePrintEnrollment.resolveContact(for: speaker, contacts: Array(contacts), mapped: nil)
         if let contact, contact.hasVoicePrint {
-            return .enrolled(onto: contact.name, at: contact.voicePrintUpdatedAt)
+            return .enrolled(
+                onto: contact.name,
+                at: contact.voicePrintUpdatedAt,
+                samples: contact.voicePrintSampleCount
+            )
         }
         if let contact {
             return .ready(onto: contact.name)
@@ -890,7 +896,12 @@ struct TranscriptPanelView: View {
                     throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
                 }
                 let embedding = try await VoicePrintEnrollment.extractEmbedding(request)
-                contact.mergeVoicePrint(embedding)
+                VoicePrintIsolation.isolate(embedding, owner: contact, among: Array(contacts))
+                contact.addVoicePrint(
+                    embedding,
+                    meetingID: meeting.id,
+                    source: VoicePrintSource.session
+                )
                 if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {
                     contact.speakerAliases.append(speaker.displayName)
                 }
@@ -1211,10 +1222,12 @@ struct TranscriptPanelView: View {
                 }
                 : nil,
             isRecoveringSpeakers: isRecoveringSpeakers,
-            onSetAsMe: speaker.isMe ? nil : {
+            onSetAsMe: {
+                let me = Speaker.resolvedMe()
                 if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-                    changeSpeakerForAll(from: representative, to: Speaker.resolvedMe())
+                    changeSpeakerForAll(from: representative, to: me)
                 }
+                menuSpeaker = me
             }
         )
     }
@@ -1587,10 +1600,10 @@ struct TranscriptPanelView: View {
                     : nil
                 if result.changed > 0 {
                     let leftover = result.unknownSpeakers.isEmpty
-                        ? "You were not changed."
+                        ? "Named voices were matched from saved prints."
                         : "Leftovers are speaker-1…. Assign them in the sheet."
                     TransientActivityCoordinator.shared.flash(
-                        "Re-analyzed \(result.changed) remote line\(result.changed == 1 ? "" : "s") from audio. \(leftover)"
+                        "Re-analyzed \(result.changed) line\(result.changed == 1 ? "" : "s") from audio. \(leftover)"
                     )
                 }
                 DevLog.ui(
@@ -1623,7 +1636,8 @@ struct TranscriptPanelView: View {
                 isMe: person.isMe
             )
             guard let contact else { continue }
-            contact.mergeVoicePrint(embedding)
+            VoicePrintIsolation.isolate(embedding, owner: contact, among: Array(contacts))
+            contact.addVoicePrint(embedding, meetingID: meeting.id, source: VoicePrintSource.reanalyze)
             rememberAlias(person.speaker.displayName, on: contact)
         }
         for speaker in result.matchedSpeakers where !speaker.isMe && !speaker.isGuestPlaceholder {
@@ -1633,7 +1647,7 @@ struct TranscriptPanelView: View {
                 contactID: nil,
                 isMe: false
             )
-            contact?.mergeVoicePrint(embedding)
+            contact?.addVoicePrint(embedding, meetingID: meeting.id, source: VoicePrintSource.reanalyze)
             if let contact {
                 rememberAlias(speaker.displayName, on: contact)
             }
@@ -1680,7 +1694,12 @@ struct TranscriptPanelView: View {
             if let embeddings = reanalyzeResult?.embeddings {
                 for speaker in speakers {
                     if let embedding = embeddings[speaker.identityKey], embedding.count >= 8 {
-                        resolvedContact.mergeVoicePrint(embedding)
+                        VoicePrintIsolation.isolate(embedding, owner: resolvedContact, among: Array(contacts))
+                        resolvedContact.addVoicePrint(
+                            embedding,
+                            meetingID: meeting.id,
+                            source: VoicePrintSource.reanalyze
+                        )
                     }
                 }
             }

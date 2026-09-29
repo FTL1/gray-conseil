@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "speaker-set-as-voice-collection",
+            version: "0.28.4-public.5",
+            title: "Set as, then stamp this meeting’s voice",
+            summary: "The speaker menu’s Set as dropdown fills Rename and assigns Me, a contact, or someone already on the call. Save a voice print from this meeting’s audio — each person keeps a collection, and Re-analyze uses all of them, including lines that were labeled as you.",
+            systemImage: "waveform.badge.plus",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "calendar-preview-graph-optional",
             version: "0.28.4-public.4",
             title: "See if Outlook is actually visible",

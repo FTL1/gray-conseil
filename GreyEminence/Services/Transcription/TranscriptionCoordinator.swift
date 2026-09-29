@@ -204,8 +204,11 @@ final class TranscriptionCoordinator {
         }
     }
 
-    func seedEnrolledPrints(_ prints: [(Speaker, [Float])]) async {
-        await diarization.seedEnrolledPrints(prints.map { (speaker: $0.0, embedding: $0.1) })
+    func seedEnrolledPrints(_ prints: [(Speaker, [Float])], replacingAll: Bool = false) async {
+        await diarization.seedEnrolledPrints(
+            prints.map { (speaker: $0.0, embedding: $0.1) },
+            replacingAll: replacingAll
+        )
     }
 
     func voicePrint(for speaker: Speaker) async -> [Float]? {

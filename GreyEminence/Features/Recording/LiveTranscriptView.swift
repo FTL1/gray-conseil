@@ -6,6 +6,8 @@ struct LiveTranscriptView: View {
     var segmentConfidence: [UUID: Float] = [:]
     var onRenameSpeaker: ((Speaker, String, Bool) -> Void)?
     var onLinkSpeakerToContact: ((Speaker, Contact) -> Void)?
+    /// Identity change that can turn Me into a named person (and the reverse).
+    var onAssignIdentity: ((Speaker, Speaker) -> Void)?
     var roster: SpeakerRoster?
     /// When false the parent already shows the People header (live record split).
     var showsRoster: Bool = true
@@ -39,6 +41,7 @@ struct LiveTranscriptView: View {
         segmentConfidence: [UUID: Float] = [:],
         onRenameSpeaker: ((Speaker, String, Bool) -> Void)? = nil,
         onLinkSpeakerToContact: ((Speaker, Contact) -> Void)? = nil,
+        onAssignIdentity: ((Speaker, Speaker) -> Void)? = nil,
         roster: SpeakerRoster? = nil,
         showsRoster: Bool = true,
         onAssignVoice: ((Speaker, SpeakerRoster.Seat) -> Void)? = nil,
@@ -56,6 +59,7 @@ struct LiveTranscriptView: View {
         self.segmentConfidence = segmentConfidence
         self.onRenameSpeaker = onRenameSpeaker
         self.onLinkSpeakerToContact = onLinkSpeakerToContact
+        self.onAssignIdentity = onAssignIdentity
         self.roster = roster
         self.showsRoster = showsRoster
         self.onAssignVoice = onAssignVoice
@@ -161,6 +165,7 @@ struct LiveTranscriptView: View {
                     },
                     onClose: { menuSpeaker = nil }
                 )
+                .id(speaker.identityKey.hideStubID)
                 .padding(12)
                 .frame(width: 300, alignment: .leading)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
@@ -410,15 +415,20 @@ struct LiveTranscriptView: View {
                 saveAsNewContact(speaker)
             },
             speakerLinks: speakerLinkGroups(for: speaker),
-            onSelectSpeakerLink: onLinkSpeakerToContact == nil ? nil : { person in
-                applySpeakerLink(person, to: speaker)
-            },
+            onSelectSpeakerLink: (onLinkSpeakerToContact != nil || onAssignIdentity != nil || onRenameSpeaker != nil)
+                ? { person in applySpeakerLink(person, to: speaker) }
+                : nil,
             onEnrollVoicePrint: onEnrollVoicePrint == nil ? nil : {
                 onEnrollVoicePrint?(speaker)
             },
             voicePrintState: resolvedVoicePrintState(for: speaker),
-            onSetAsMe: speaker.isMe ? nil : {
-                onRenameSpeaker?(speaker, "me", false)
+            onSetAsMe: {
+                if let onAssignIdentity {
+                    onAssignIdentity(speaker, Speaker.resolvedMe())
+                } else {
+                    onRenameSpeaker?(speaker, "me", false)
+                }
+                menuSpeaker = Speaker.resolvedMe()
             }
         )
     }
@@ -454,14 +464,18 @@ struct LiveTranscriptView: View {
     }
 
     private func applySpeakerLink(_ person: SpeakerLinkPerson, to speaker: Speaker) {
+        let target = person.asSpeaker()
         if let contactID = person.contactID,
            let contact = contacts.first(where: { $0.id == contactID }) {
             onLinkSpeakerToContact?(speaker, contact)
-            if !speaker.isMe { menuSpeaker = .other(contact.name) }
-            return
+        } else if let onAssignIdentity {
+            onAssignIdentity(speaker, target)
+        } else if person.isMe {
+            onRenameSpeaker?(speaker, "me", false)
+        } else {
+            onRenameSpeaker?(speaker, person.name, false)
         }
-        onRenameSpeaker?(speaker, person.name, false)
-        if !speaker.isMe { menuSpeaker = .other(person.name) }
+        menuSpeaker = target
     }
 
     private func saveAsNewContact(_ speaker: Speaker) {

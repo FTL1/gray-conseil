@@ -251,17 +251,19 @@ actor SpeakerDiarizationService {
     }
 
     private func matchingKnownVoice(_ embedding: [Float]) -> Speaker? {
-        if let match = VoicePrintMatcher.bestMatch(
+        if let match = VoicePrintMatcher.bestIdentityMatch(
             embedding: embedding,
             in: enrolledPrints.map { (item: $0.speaker, embedding: $0.embedding) },
+            identity: { $0.identityKey },
             threshold: VoicePrintMatcher.enrolledDistance,
             margin: VoicePrintMatcher.matchMargin
         ) {
             return match.item
         }
-        if let match = VoicePrintMatcher.bestMatch(
+        if let match = VoicePrintMatcher.bestIdentityMatch(
             embedding: embedding,
             in: voicePrints.map { (item: $0.speaker, embedding: $0.embedding) },
+            identity: { $0.identityKey },
             threshold: VoicePrintMatcher.sessionDistance,
             margin: VoicePrintMatcher.matchMargin
         ) {
@@ -279,13 +281,15 @@ actor SpeakerDiarizationService {
         }
     }
 
-    func seedEnrolledPrints(_ prints: [(speaker: Speaker, embedding: [Float])]) {
+    func seedEnrolledPrints(
+        _ prints: [(speaker: Speaker, embedding: [Float])],
+        replacingAll: Bool = false
+    ) {
+        if replacingAll {
+            enrolledPrints = []
+        }
         for print in prints where print.embedding.count >= 8 {
-            if let index = enrolledPrints.firstIndex(where: { $0.speaker.matchesIdentity(print.speaker) }) {
-                enrolledPrints[index].embedding = print.embedding
-            } else {
-                enrolledPrints.append(print)
-            }
+            enrolledPrints.append(print)
             rememberVoice(print.speaker, embedding: print.embedding)
         }
     }
@@ -449,7 +453,7 @@ enum MeetingSpeakerRecovery {
             case .noSystemAudio:
                 "No system-audio recording on disk to recover speakers from."
             case .noRemoteSegments:
-                "This transcript has no remote-speaker lines to relabel."
+                "This transcript has no lines to relabel."
             case .noDiarizedSpeech:
                 "Diarization did not find distinct speakers in the audio."
             }
@@ -463,13 +467,22 @@ enum MeetingSpeakerRecovery {
         var speaker: Speaker
         var contactID: UUID?
         var embedding: [Float]?
+        var embeddings: [[Float]] = []
         var isMe: Bool
         var isPreselected: Bool
 
         var id: String { (isMe ? "me:" : "p:") + name.lowercased() }
 
         var hasVoicePrint: Bool {
-            (embedding?.count ?? 0) >= 8
+            !allEmbeddings().isEmpty
+        }
+
+        func allEmbeddings() -> [[Float]] {
+            var result = embeddings.filter { $0.count >= 8 }
+            if result.isEmpty, let embedding, embedding.count >= 8 {
+                result = [embedding]
+            }
+            return result
         }
     }
 
@@ -510,6 +523,7 @@ enum MeetingSpeakerRecovery {
                     speaker: speaker,
                     contactID: contact?.id,
                     embedding: contact?.voicePrintEmbedding(),
+                    embeddings: contact?.voicePrintEmbeddings() ?? [],
                     isMe: isMe,
                     isPreselected: preselected
                 )
@@ -568,15 +582,16 @@ enum MeetingSpeakerRecovery {
         return list
     }
 
-    /// Relabel remote transcript lines from system audio. Seeded stamps for
-    /// the selected people are matched first; leftovers become unknown-N.
+    /// Relabel transcript lines from system audio. Seeded stamps (the full
+    /// collection per person, including in-session captures) are matched
+    /// first; leftovers become unknown-N. Lines currently labeled Me are
+    /// included so a remote voice that was stamped as you can be corrected.
     @MainActor
     static func recover(
         meeting: Meeting,
         expected: [ExpectedSpeaker] = []
     ) async throws -> Result {
-        let remotes = meeting.segments.filter { !$0.speaker.isMe }
-        guard !remotes.isEmpty else { throw RecoveryError.noRemoteSegments }
+        guard !meeting.segments.isEmpty else { throw RecoveryError.noRemoteSegments }
 
         let audioID = meeting.audioSourceMeetingID ?? meeting.id
         let urls = AudioFileWriter.existingChunkURLs(
@@ -592,12 +607,11 @@ enum MeetingSpeakerRecovery {
 
         let service = SpeakerDiarizationService()
         try await service.prepare()
-        let prints = expected.compactMap { person -> (speaker: Speaker, embedding: [Float])? in
-            guard let embedding = person.embedding, embedding.count >= 8 else { return nil }
-            return (person.speaker, embedding)
+        let prints: [(speaker: Speaker, embedding: [Float])] = expected.flatMap { person in
+            person.allEmbeddings().map { (person.speaker, $0) }
         }
         if !prints.isEmpty {
-            await service.seedEnrolledPrints(prints)
+            await service.seedEnrolledPrints(prints, replacingAll: true)
         }
         let labeled = try await service.diarizeCompleteFile(
             samples: samples,
@@ -615,7 +629,7 @@ enum MeetingSpeakerRecovery {
 
         var changed = 0
         var used: [Speaker] = []
-        for segment in remotes {
+        for segment in meeting.segments {
             guard let speaker = SpeakerOverlapAssigner.speaker(
                 forStart: segment.startTime,
                 end: segment.endTime,

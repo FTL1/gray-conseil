@@ -71,6 +71,9 @@ struct LiveInterviewView: View {
                     onLinkSpeakerToContact: { speaker, contact in
                         recordingVM.linkSpeakerToContact(speaker, contact: contact)
                     },
+                    onAssignIdentity: { speaker, newSpeaker in
+                        recordingVM.assignSpeaker(speaker, to: newSpeaker)
+                    },
                     attendees: recordingVM.currentMeeting?.attendees ?? [],
                     onEnrollVoicePrint: { speaker in
                         recordingVM.enrollVoicePrint(for: speaker)

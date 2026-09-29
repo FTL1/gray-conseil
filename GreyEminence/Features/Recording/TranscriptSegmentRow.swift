@@ -255,11 +255,8 @@ struct SpeakerActionPopover: View {
                         }
                         .controlSize(.small)
                     }
-                    if let setAsMe = actions.onSetAsMe {
-                        Button("Set as Me") {
-                            setAsMe()
-                        }
-                        .controlSize(.small)
+                    if actions.onSelectSpeakerLink != nil || actions.onSetAsMe != nil {
+                        setAsMenu
                     }
                 }
             }
@@ -407,15 +404,78 @@ struct SpeakerActionPopover: View {
         .padding(12)
         .frame(width: 300)
         .onAppear {
-            renameDraft = speaker.displayName == Speaker.defaultMeLabel ? "" : speaker.displayName
+            syncRenameDraft(from: speaker)
             searchDraft = actions.searchQuery
         }
+        .onChange(of: speaker.displayName) { _, _ in
+            syncRenameDraft(from: speaker)
+        }
+    }
+
+    private func syncRenameDraft(from speaker: Speaker) {
+        renameDraft = speaker.displayName
     }
 
     private func submitRename(saveAsDefault: Bool) {
         let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         actions.onRename?(trimmed, saveAsDefault)
+    }
+
+    @ViewBuilder
+    private var setAsMenu: some View {
+        let meName = SpeakerNames.effectiveMeName ?? Speaker.defaultMeLabel
+        let mePerson = SpeakerLinkPerson(
+            contactID: nil,
+            name: meName,
+            hasVoicePrint: false,
+            aliases: [],
+            meetingCount: 0,
+            isThisVoice: speaker.isMe,
+            isMe: true
+        )
+        let meetingPeople = actions.speakerLinks.thisMeeting.filter { !$0.isMe }
+        let prior = actions.speakerLinks.priorSpeakers
+        Menu {
+            Button {
+                applySetAs(mePerson)
+            } label: {
+                if speaker.isMe {
+                    Label("Me — \(meName)", systemImage: "checkmark")
+                } else {
+                    Text("Me — \(meName)")
+                }
+            }
+            if !meetingPeople.isEmpty {
+                Divider()
+                ForEach(meetingPeople) { person in
+                    Button(person.name) { applySetAs(person) }
+                }
+            }
+            if !prior.isEmpty {
+                Divider()
+                Menu("Prior speakers") {
+                    ForEach(prior) { person in
+                        Button(person.name) { applySetAs(person) }
+                    }
+                }
+            }
+        } label: {
+            Text("Set as")
+        }
+        .controlSize(.small)
+        .help("Assign this voice to you, a speaker in this meeting, or a contact. The rename field updates to match.")
+    }
+
+    private func applySetAs(_ person: SpeakerLinkPerson) {
+        renameDraft = person.name
+        if let onSelect = actions.onSelectSpeakerLink {
+            onSelect(person)
+            return
+        }
+        if person.isMe {
+            actions.onSetAsMe?()
+        }
     }
 
     @ViewBuilder
@@ -439,6 +499,7 @@ struct SpeakerActionPopover: View {
                             ForEach(actions.speakerLinks.priorSpeakers) { person in
                                 Button(person.name) {
                                     guard !person.isThisVoice else { return }
+                                    renameDraft = person.name
                                     actions.onSelectSpeakerLink?(person)
                                 }
                             }
@@ -472,6 +533,7 @@ struct SpeakerActionPopover: View {
     private func speakerLinkRow(_ person: SpeakerLinkPerson) -> some View {
         Button {
             guard !person.isThisVoice else { return }
+            renameDraft = person.name
             actions.onSelectSpeakerLink?(person)
         } label: {
             HStack(spacing: 8) {
@@ -514,11 +576,11 @@ struct SpeakerActionPopover: View {
             } label: {
                 switch actions.voicePrintState {
                 case .working:
-                    Label("Enrolling voice print…", systemImage: "waveform")
+                    Label("Capturing voice print…", systemImage: "waveform")
                 case .enrolled:
-                    Label("Update voice print", systemImage: "waveform")
+                    Label("Add voice print from this meeting", systemImage: "waveform.badge.plus")
                 default:
-                    Label("Enroll voice print", systemImage: "waveform")
+                    Label("Save voice print from this meeting", systemImage: "waveform")
                 }
             }
             .buttonStyle(.plain)
@@ -535,14 +597,13 @@ struct SpeakerActionPopover: View {
     private var voicePrintCaption: some View {
         switch actions.voicePrintState {
         case .ready(let onto):
-            Text(onto.map { "Saves this voice to \($0). Later meetings will tag matching speech as \($0)." }
-                 ?? "Pick someone above, then enroll so later meetings recognize them.")
+            Text(onto.map { "Captures this voice from this meeting’s audio and saves it to \($0). Re-analyze uses the full collection, not a single overwritten stamp." }
+                 ?? "Pick someone above, then save a voice print from this meeting’s audio.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
-        case .enrolled(let onto, let at):
-            Text(at.map { "Enrolled on \(onto) \($0.formatted(.relative(presentation: .named)))." }
-                 ?? "Enrolled on \(onto).")
+        case .enrolled(let onto, let at, let samples):
+            Text(enrolledCaption(onto: onto, at: at, samples: samples))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -556,11 +617,16 @@ struct SpeakerActionPopover: View {
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         case .needsPerson:
-            Text("Pick someone in This meeting or Prior speakers first, then enroll.")
+            Text("Pick someone with Set as or Speakers first, then save a voice print from this meeting.")
                 .font(.caption2)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func enrolledCaption(onto: String, at: Date?, samples: Int) -> String {
+        let latest = at.map { " Latest \($0.formatted(.relative(presentation: .named)))." } ?? ""
+        return "\(samples) voice print\(samples == 1 ? "" : "s") on \(onto).\(latest) Adding another keeps the earlier ones."
     }
 
     private func initials(for name: String) -> String {

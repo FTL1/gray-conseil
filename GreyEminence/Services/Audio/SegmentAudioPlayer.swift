@@ -49,6 +49,7 @@ final class SegmentAudioPlayer {
     }
 
     static let trackKey = "segmentPlaybackTrack"
+    static let trackDefaultedToBothKey = "segmentPlaybackTrackDefaultedToBoth"
 
     /// The segment currently playing, for the row that started it.
     private(set) var playingSegmentID: UUID?
@@ -64,19 +65,35 @@ final class SegmentAudioPlayer {
     private var loadTask: Task<Void, Never>?
 
     private init() {
-        let stored = UserDefaults.standard.string(forKey: Self.trackKey) ?? ""
-        track = Track(rawValue: stored) ?? .speaker
-    }
-
-    func toggle(_ segment: TranscriptSegment, in meeting: Meeting) {
-        if playingSegmentID == segment.id {
-            stop()
+        if !UserDefaults.standard.bool(forKey: Self.trackDefaultedToBothKey) {
+            // Lines stamped as Me used to play only the microphone, so a
+            // remote voice labeled as you sounded like the wrong person.
+            track = .both
+            UserDefaults.standard.set(true, forKey: Self.trackDefaultedToBothKey)
+            UserDefaults.standard.set(Track.both.rawValue, forKey: Self.trackKey)
         } else {
-            play(segment, in: meeting)
+            let stored = UserDefaults.standard.string(forKey: Self.trackKey) ?? ""
+            track = Track(rawValue: stored) ?? .both
         }
     }
 
-    func play(_ segment: TranscriptSegment, in meeting: Meeting) {
+    func toggle(
+        _ segment: TranscriptSegment,
+        in meeting: Meeting,
+        until nextStart: TimeInterval? = nil
+    ) {
+        if playingSegmentID == segment.id {
+            stop()
+        } else {
+            play(segment, in: meeting, until: nextStart)
+        }
+    }
+
+    func play(
+        _ segment: TranscriptSegment,
+        in meeting: Meeting,
+        until nextStart: TimeInterval? = nil
+    ) {
         stop()
         failure = nil
 
@@ -87,7 +104,8 @@ final class SegmentAudioPlayer {
         let window = SegmentAudioLocator.window(
             segmentStart: segment.startTime,
             segmentEnd: segment.endTime,
-            offset: meeting.audioStartOffset
+            offset: meeting.audioStartOffset,
+            nextStart: nextStart
         )
         let sources = Self.sources(for: track, isMe: segment.speaker.isMe)
         let storage = StorageManager.shared

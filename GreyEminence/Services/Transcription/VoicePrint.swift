@@ -63,6 +63,105 @@ enum VoicePrintMatcher {
         }
         return best
     }
+
+    /// Match a probe against a collection of prints per person. Two samples of
+    /// the same person never compete for the margin — only the closest print
+    /// of each identity is ranked, so a well-enrolled contact cannot crowd out
+    /// everyone else just by having more stamps.
+    static func bestIdentityMatch<T, ID: Hashable>(
+        embedding: [Float],
+        in candidates: [(item: T, embedding: [Float])],
+        identity: (T) -> ID,
+        threshold: Float,
+        margin: Float = 0
+    ) -> (item: T, distance: Float)? {
+        guard embedding.count >= 8, !candidates.isEmpty else { return nil }
+        var bestPerIdentity: [ID: (item: T, distance: Float)] = [:]
+        for candidate in candidates {
+            guard candidate.embedding.count >= 8 else { continue }
+            let id = identity(candidate.item)
+            let distance = cosineDistance(embedding, candidate.embedding)
+            if let existing = bestPerIdentity[id] {
+                if distance < existing.distance {
+                    bestPerIdentity[id] = (candidate.item, distance)
+                }
+            } else {
+                bestPerIdentity[id] = (candidate.item, distance)
+            }
+        }
+        let ranked = bestPerIdentity.values.sorted { $0.distance < $1.distance }
+        guard let best = ranked.first, best.distance <= threshold else { return nil }
+        if margin > 0, ranked.count >= 2 {
+            let second = ranked[1].distance
+            if second - best.distance < margin { return nil }
+        }
+        return best
+    }
+}
+
+/// One WeSpeaker embedding kept on a contact. Contacts hold a collection of
+/// these (one per enrollment / meeting) rather than a single averaged vector.
+struct VoicePrintSample: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var embedding: Data
+    var createdAt: Date
+    var meetingID: UUID?
+    var source: String
+
+    func floats() -> [Float]? {
+        VoicePrintCodec.decode(embedding)
+    }
+
+    static func make(
+        embedding: [Float],
+        meetingID: UUID? = nil,
+        source: String
+    ) -> VoicePrintSample {
+        VoicePrintSample(
+            id: UUID(),
+            embedding: VoicePrintCodec.encode(embedding),
+            createdAt: .now,
+            meetingID: meetingID,
+            source: source
+        )
+    }
+}
+
+enum VoicePrintSource {
+    static let session = "session"
+    static let enroll = "enroll"
+    static let reanalyze = "reanalyze"
+    static let legacy = "legacy"
+}
+
+enum VoicePrintCollectionCodec {
+    static let maxSamples = 16
+
+    static func encode(_ samples: [VoicePrintSample]) -> Data? {
+        try? JSONEncoder().encode(samples)
+    }
+
+    static func decode(_ data: Data?) -> [VoicePrintSample] {
+        guard let data,
+              let samples = try? JSONDecoder().decode([VoicePrintSample].self, from: data)
+        else { return [] }
+        return samples
+    }
+}
+
+/// When a new in-session print is assigned to someone, drop samples on other
+/// contacts that are actually this same voice (the usual Me-was-Robert case).
+enum VoicePrintIsolation {
+    static func isolate(
+        _ embedding: [Float],
+        owner: Contact,
+        among contacts: [Contact],
+        threshold: Float = VoicePrintMatcher.enrolledDistance
+    ) {
+        for other in contacts where other.id != owner.id {
+            other.removeSamples(matching: embedding, threshold: threshold)
+        }
+    }
 }
 
 /// Which stored voice stamps to load at record-start. Never the whole
@@ -89,10 +188,16 @@ struct SpeakerLinkPerson: Identifiable, Hashable {
     var aliases: [String]
     var meetingCount: Int
     var isThisVoice: Bool
+    var isMe: Bool = false
 
     var id: String {
         if let contactID { return contactID.uuidString }
+        if isMe { return "me:\(name.lowercased())" }
         return "name:\(name.lowercased())"
+    }
+
+    func asSpeaker() -> Speaker {
+        isMe ? Speaker.resolvedMe() : .other(name)
     }
 }
 
@@ -129,7 +234,11 @@ enum SpeakerLinkCatalog {
         for name in transcriptNames { consider(name) }
 
         let thisMeeting = meetingNames.map { name in
-            resolvedPerson(named: name, in: people, currentSpeakerName: currentSpeakerName)
+            var person = resolvedPerson(named: name, in: people, currentSpeakerName: currentSpeakerName)
+            if let meName, isMeName(name, meName: meName) {
+                person.isMe = true
+            }
+            return person
         }
 
         let meetingKeys = Set(thisMeeting.map { $0.id })
@@ -183,14 +292,21 @@ enum SpeakerLinkCatalog {
     }
 
     private static func matches(_ person: SpeakerLinkPerson, name: String) -> Bool {
+        if person.isMe, isMeName(name, meName: person.name) { return true }
         if person.name.compare(name, options: .caseInsensitive) == .orderedSame { return true }
         return person.aliases.contains { $0.compare(name, options: .caseInsensitive) == .orderedSame }
+    }
+
+    private static func isMeName(_ name: String, meName: String) -> Bool {
+        if name.compare(meName, options: .caseInsensitive) == .orderedSame { return true }
+        if name.compare(Speaker.defaultMeLabel, options: .caseInsensitive) == .orderedSame { return true }
+        return SpeakerNameMatcher.samePerson(name, meName)
     }
 }
 
 enum VoicePrintUIState: Equatable {
     case ready(onto: String?)
-    case enrolled(onto: String, at: Date?)
+    case enrolled(onto: String, at: Date?, samples: Int)
     case working
     case failed(String)
     case needsPerson

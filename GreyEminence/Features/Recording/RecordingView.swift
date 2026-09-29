@@ -29,6 +29,9 @@ struct RecordingView: View {
                     onLinkSpeakerToContact: { speaker, contact in
                         viewModel.linkSpeakerToContact(speaker, contact: contact)
                     },
+                    onAssignIdentity: { speaker, newSpeaker in
+                        viewModel.assignSpeaker(speaker, to: newSpeaker)
+                    },
                     roster: viewModel.speakerRoster,
                     showsRoster: false,
                     onAssignVoice: { voice, seat in

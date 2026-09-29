@@ -60,10 +60,17 @@ enum SegmentAudioLocator {
     static func window(
         segmentStart: TimeInterval,
         segmentEnd: TimeInterval,
-        offset: TimeInterval
+        offset: TimeInterval,
+        nextStart: TimeInterval? = nil
     ) -> ClosedRange<TimeInterval> {
+        var end = max(segmentEnd, segmentStart)
+        if let nextStart, nextStart > segmentStart {
+            // A line with no end (or an end that runs into the next line)
+            // stops at the following snippet so play matches the text.
+            end = min(end == segmentStart ? nextStart : end, nextStart)
+        }
         let lower = max(0, offset + segmentStart - padding)
-        let naturalEnd = offset + max(segmentEnd, segmentStart) + padding
+        let naturalEnd = offset + end + padding
         let upper = max(lower + minimumDuration, naturalEnd)
         return lower...upper
     }

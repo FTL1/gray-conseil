@@ -17,17 +17,23 @@ struct ContactDetailView: View {
 
             Section("Voice") {
                 if contact.hasVoicePrint {
-                    Label("Voice print enrolled", systemImage: "waveform")
+                    Label(
+                        "\(contact.voicePrintSampleCount) voice print\(contact.voicePrintSampleCount == 1 ? "" : "s")",
+                        systemImage: "waveform"
+                    )
                     if let date = contact.voicePrintUpdatedAt {
-                        Text("Updated \(date.formatted(.relative(presentation: .named)))")
+                        Text("Latest \(date.formatted(.relative(presentation: .named)))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Button("Remove voice print", role: .destructive) {
+                    Text("Each meeting can add another stamp. Re-analyze matches against the whole collection.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Remove all voice prints", role: .destructive) {
                         contact.clearVoicePrint()
                     }
                 } else {
-                    Text("No voice print yet. Right-click this person in a transcript and choose Enroll voice print.")
+                    Text("No voice print yet. Right-click this person in a transcript and choose Save voice print from this meeting.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

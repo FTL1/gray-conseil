@@ -7,6 +7,10 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.5 — 2026-09-29
+
+**Speaker inspector, playback, and voice prints.** “Set as” is a dropdown of Me, this meeting’s speakers, and contacts; picking one fills Rename and assigns that voice. Clicking a name under Speakers does the same, including lines that were labeled as you. Each person keeps a collection of voice prints (in-session captures append, they are not averaged away). Re-analyze uses the whole collection and re-checks lines labeled as you, so a remote voice stamped as Me can be corrected. Play on a transcript line stops at the next snippet and defaults to both recorded tracks.
+
 ## 0.28.4-public.4 — 2026-09-29
 
 **Calendar Settings actually shows what EventKit sees.** Request access, refresh, and a nearby-meeting list so toggling Exchange is not a silent no-op. Microsoft Graph is optional: “I am not using Microsoft Graph” (default) makes Permissions Health skip it instead of “missing client ID.”

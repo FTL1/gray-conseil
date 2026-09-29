@@ -337,9 +337,17 @@ enum SchemaV28: VersionedSchema {
     static var models: [any PersistentModel.Type] { SchemaV27.models }
 }
 
+/// SchemaV29 adds `Contact.voicePrintCollectionData` — a JSON collection of
+/// voice-print samples per person, so in-session enrollments append instead
+/// of overwriting the single averaged vector in `voicePrintData`.
+enum SchemaV29: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(29, 0, 0) }
+    static var models: [any PersistentModel.Type] { SchemaV28.models }
+}
+
 enum GreyEminenceMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [SchemaV1.self, SchemaV2.self, SchemaV3.self, SchemaV4.self, SchemaV5.self, SchemaV6.self, SchemaV7.self, SchemaV8.self, SchemaV9.self, SchemaV10.self, SchemaV11.self, SchemaV12.self, SchemaV13.self, SchemaV14.self, SchemaV15.self, SchemaV16.self, SchemaV17.self, SchemaV18.self, SchemaV19.self, SchemaV20.self, SchemaV21.self, SchemaV22.self, SchemaV23.self, SchemaV24.self, SchemaV25.self, SchemaV26.self, SchemaV27.self, SchemaV28.self]
+        [SchemaV1.self, SchemaV2.self, SchemaV3.self, SchemaV4.self, SchemaV5.self, SchemaV6.self, SchemaV7.self, SchemaV8.self, SchemaV9.self, SchemaV10.self, SchemaV11.self, SchemaV12.self, SchemaV13.self, SchemaV14.self, SchemaV15.self, SchemaV16.self, SchemaV17.self, SchemaV18.self, SchemaV19.self, SchemaV20.self, SchemaV21.self, SchemaV22.self, SchemaV23.self, SchemaV24.self, SchemaV25.self, SchemaV26.self, SchemaV27.self, SchemaV28.self, SchemaV29.self]
     }
 
     static var stages: [MigrationStage] {
@@ -370,7 +378,8 @@ enum GreyEminenceMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: SchemaV24.self, toVersion: SchemaV25.self),
             .lightweight(fromVersion: SchemaV25.self, toVersion: SchemaV26.self),
             .lightweight(fromVersion: SchemaV26.self, toVersion: SchemaV27.self),
-            .lightweight(fromVersion: SchemaV27.self, toVersion: SchemaV28.self)
+            .lightweight(fromVersion: SchemaV27.self, toVersion: SchemaV28.self),
+            .lightweight(fromVersion: SchemaV28.self, toVersion: SchemaV29.self)
         ]
     }
 }

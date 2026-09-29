@@ -2151,13 +2151,28 @@ final class RecordingViewModel {
         if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {
             contact.speakerAliases.append(speaker.displayName)
         }
-        if speaker.isMe { return }
-        if speaker.displayName.compare(contact.name, options: .caseInsensitive) != .orderedSame {
-            renameSpeaker(speaker, to: contact.name)
-        }
         if let meeting = currentMeeting, !meeting.attendees.contains(where: { $0.id == contact.id }) {
             meeting.attendees.append(contact)
         }
+        let target: Speaker = contact.id == Meeting.storedMyContactID
+            ? Speaker.resolvedMe()
+            : .other(contact.name)
+        if !speaker.matchesIdentity(target) {
+            assignSpeaker(speaker, to: target)
+        }
+    }
+
+    /// Change this voice's identity (Me → a named person, or the reverse).
+    /// Distinct from `renameSpeaker`, which keeps a Me line as Me.
+    func assignSpeaker(_ speaker: Speaker, to newSpeaker: Speaker) {
+        guard !speaker.matchesIdentity(newSpeaker) else { return }
+        speakerUndo.capture(coordinator.segments)
+        coordinator.relabelSpeaker(speaker, to: newSpeaker)
+        refreshSegmentsFromCoordinator()
+        log.log(
+            "Assigned speaker \(speaker.displayName) → \(newSpeaker.displayName)",
+            category: .transcription
+        )
     }
 
     func seedEnrolledVoicePrints() async {
@@ -2169,15 +2184,14 @@ final class RecordingViewModel {
             meetingAttendeeIDs: attendeeIDs,
             myContactID: Meeting.storedMyContactID
         )
-        let prints: [(Speaker, [Float])] = seeded.compactMap { contact in
-            guard let embedding = contact.voicePrintEmbedding() else { return nil }
-            if contact.id == Meeting.storedMyContactID {
-                return (Speaker.resolvedMe(), embedding)
-            }
-            return (.other(contact.name), embedding)
+        let prints: [(Speaker, [Float])] = seeded.flatMap { contact -> [(Speaker, [Float])] in
+            let speaker: Speaker = contact.id == Meeting.storedMyContactID
+                ? Speaker.resolvedMe()
+                : .other(contact.name)
+            return contact.voicePrintEmbeddings().map { (speaker, $0) }
         }
         guard !prints.isEmpty else { return }
-        await coordinator.seedEnrolledPrints(prints)
+        await coordinator.seedEnrolledPrints(prints, replacingAll: true)
         log.log("Seeded \(prints.count) voice print(s) for this meeting (not the whole People list)", category: .transcription)
     }
 
@@ -2220,7 +2234,13 @@ final class RecordingViewModel {
             guard let embedding, embedding.count >= 8 else {
                 throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
             }
-            contact.mergeVoicePrint(embedding)
+            let allContacts = (try? modelContext?.fetch(FetchDescriptor<Contact>())) ?? contacts
+            VoicePrintIsolation.isolate(embedding, owner: contact, among: allContacts)
+            contact.addVoicePrint(
+                embedding,
+                meetingID: currentMeeting?.id,
+                source: VoicePrintSource.session
+            )
             speakerContactMapper.remember(speaker.displayName, contact: contact)
             if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {
                 contact.speakerAliases.append(speaker.displayName)
@@ -2231,9 +2251,15 @@ final class RecordingViewModel {
             if let context = modelContext {
                 PersistenceGate.save(context, site: "enrollVoicePrint", critical: false, meetingID: currentMeeting?.id)
             }
-            await coordinator.seedEnrolledPrints([(contact.id == Meeting.storedMyContactID ? Speaker.resolvedMe() : .other(contact.name), embedding)])
+            let enrolledSpeaker: Speaker = contact.id == Meeting.storedMyContactID
+                ? Speaker.resolvedMe()
+                : .other(contact.name)
+            await coordinator.seedEnrolledPrints([(enrolledSpeaker, embedding)])
             voicePrintProgress = .idle
-            log.log("Enrolled voice print for \(contact.name)", category: .transcription)
+            log.log(
+                "Enrolled voice print for \(contact.name) (\(contact.voicePrintSampleCount) on file)",
+                category: .transcription
+            )
         } catch {
             voicePrintProgress = .failed(speaker.identityKey, error.localizedDescription)
             log.log("Voice-print enroll failed: \(error.localizedDescription)", category: .transcription, level: .warning)
@@ -2250,7 +2276,11 @@ final class RecordingViewModel {
         let mapped = speakerContactMapper.speakerToContact[speaker.displayName]
         if let contact = VoicePrintEnrollment.resolveContact(for: speaker, contacts: contacts, mapped: mapped),
            contact.hasVoicePrint {
-            return .enrolled(onto: contact.name, at: contact.voicePrintUpdatedAt)
+            return .enrolled(
+                onto: contact.name,
+                at: contact.voicePrintUpdatedAt,
+                samples: contact.voicePrintSampleCount
+            )
         }
         if let contact = VoicePrintEnrollment.resolveContact(for: speaker, contacts: contacts, mapped: mapped) {
             return .ready(onto: contact.name)
