@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "talk-over-overlap-seat",
+            version: "0.28.4-public.7",
+            title: "Overlapping talk is Talk-over",
+            summary: "When two people talk at once, those lines land on a Talk-over seat instead of speaker-3. Assign it after Re-analyze. A real unnamed voice is still speaker-1.",
+            systemImage: "person.2.wave.2",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "voice-print-room-mic-overlap",
             version: "0.28.4-public.6",
             title: "Stamp the room, fold overlapping talk",

@@ -45,10 +45,28 @@ enum Speaker: Codable, Hashable, Sendable {
 
     static func prettyRemoteName(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isTalkOverName(trimmed) { return talkOverDisplayName }
         if let number = remoteIndex(fromLegacyName: trimmed) {
             return placeholderLabel(index: number)
         }
         return trimmed
+    }
+
+    /// Two people talking at once. One seat, not a third person.
+    static let talkOverLabel = "talk-over"
+    static let talkOverDisplayName = "Talk-over"
+    static var talkOver: Speaker { .other(talkOverLabel) }
+
+    static func isTalkOverName(_ raw: String) -> Bool {
+        let compact = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+        return compact == "talkover"
+            || compact == "overlap"
+            || compact == "crosstalk"
+            || compact == "mixed"
     }
 
     /// "Speaker" / "Other" / "guest" → 1. "Speaker 2" / "guest-2" / "unknown-2" / "speaker-2" → 2.
@@ -81,6 +99,7 @@ enum Speaker: Codable, Hashable, Sendable {
     }
 
     var initials: String {
+        if isTalkOver { return "TO" }
         if isMe, displayName == Self.defaultMeLabel {
             return "ME"
         }
@@ -111,15 +130,21 @@ enum Speaker: Codable, Hashable, Sendable {
         return n.isEmpty || n == "speaker" || n == "other" || n == "unknown"
     }
 
-    /// Temporary diarization slot (speaker-1, guest-1, unknown-1…) — not a name the user chose.
+    /// Temporary diarization slot (speaker-1, guest-1, unknown-1, Talk-over…) — not a name the user chose.
     var isGuestPlaceholder: Bool {
         guard let name = storedRemoteName else { return false }
         if isAnonymousRemote { return true }
         if isUnknownPlaceholder { return true }
+        if isTalkOver { return true }
         let lower = name.lowercased()
         return Speaker.remoteIndex(fromLegacyName: name) != nil
             || lower.hasPrefix("guest-")
             || lower.hasPrefix("speaker-")
+    }
+
+    var isTalkOver: Bool {
+        guard let name = storedRemoteName else { return false }
+        return Self.isTalkOverName(name)
     }
 
     var isUnknownPlaceholder: Bool {

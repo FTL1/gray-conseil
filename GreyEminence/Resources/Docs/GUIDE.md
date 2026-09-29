@@ -264,7 +264,7 @@ Right-click the transcript badge → **Hide this speaker** does the same. A dash
 
 Hiding **Jordan** also hides **Jordan Hale** (and guest lines you assigned to him). Hiding **you** also hides a remote line still labeled with your name. The **first** comments are included — they used to stay visible.
 
-Unassigned leftover voices (unknown-1 / guest-1) stay on so you can identify them. Then assign them: right-click → **This is Jordan**. Those lines join Jordan’s chip.
+Unassigned leftover voices (**Talk-over**, speaker-1, guest-1) stay on so you can identify them. Then assign them: right-click → **This is Jordan**. Those lines join Jordan’s chip.
 
 **Assigning after you hide someone:** only the lines still on screen change. Hidden speakers — including you — stay as they are. Select Visible, then Assign, or Merge.
 
@@ -272,7 +272,7 @@ Unassigned leftover voices (unknown-1 / guest-1) stay on so you can identify the
 
 **Colors:** right-click a name → pick a swatch → **Lock this color**. Alex, Jordan, and Sam keep those colors in later meetings. If two people would share a color, the more common one keeps it.
 
-If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call (every saved stamp is used, including ones captured from this meeting). Lines currently labeled as you are re-checked, so a remote voice that was stamped as you can be corrected. Anyone who does not match becomes **speaker-1**, **speaker-2**…. Select one or more unknowns and assign them to a known person, a contact, or a typed name. A voice stamp is **added** onto that contact. Undo and revert are in **⋯**.
+If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call (every saved stamp is used, including ones captured from this meeting). Lines currently labeled as you are re-checked, so a remote voice that was stamped as you can be corrected. Overlapping talk becomes **Talk-over**. Anyone else who does not match becomes **speaker-1**, **speaker-2**…. Select leftover seats and assign them to a known person, a contact, or a typed name. A voice stamp is **added** onto that contact. Undo and revert are in **⋯**.
 
 ### Right-click a speaker name
 

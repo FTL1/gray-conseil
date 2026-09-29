@@ -7,6 +7,10 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.7 — 2026-09-29
+
+**Overlapping talk is Talk-over, not speaker-3.** When two people talk at once, those lines land on one Talk-over seat (initials TO) instead of a third person. Assign it after Re-analyze. A voice that is far from everyone is still speaker-1. You cannot enroll Talk-over — pick a real person first.
+
 ## 0.28.4-public.6 — 2026-09-29
 
 **Room/mic character on a voice print, and overlapping talk no longer mints a third person.** WeSpeaker tries to ignore the room. A checkbox on Save voice print (**Include room and mic character**, on by default) also stamps reverb, hiss, and the far-end mic. Re-analyze uses that footprint. Mixed Clay+remote audio that used to become speaker-3 is folded back onto the two real voices when both tracks are talking.

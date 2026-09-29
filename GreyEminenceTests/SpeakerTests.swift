@@ -181,6 +181,22 @@ final class SpeakerTests: XCTestCase {
         XCTAssertFalse(Speaker.me.isGuestPlaceholder)
     }
 
+    func testTalkOverIsOnePlaceholderSeat() {
+        XCTAssertEqual(Speaker.talkOver.displayName, "Talk-over")
+        XCTAssertEqual(Speaker.talkOver.initials, "TO")
+        XCTAssertTrue(Speaker.talkOver.isTalkOver)
+        XCTAssertTrue(Speaker.talkOver.isGuestPlaceholder)
+        XCTAssertFalse(Speaker.talkOver.isMe)
+        XCTAssertEqual(Speaker.prettyRemoteName("overlap"), "Talk-over")
+        XCTAssertEqual(Speaker.prettyRemoteName("crosstalk"), "Talk-over")
+        XCTAssertEqual(Speaker.prettyRemoteName("mixed"), "Talk-over")
+        XCTAssertEqual(Speaker.prettyRemoteName("talk over"), "Talk-over")
+        XCTAssertTrue(Speaker.other("Overlap").isTalkOver)
+        XCTAssertTrue(Speaker.other("talk-over").matchesIdentity(.talkOver))
+        XCTAssertFalse(Speaker.other("Pat").isTalkOver)
+        XCTAssertFalse(Speaker.other("speaker-3").isTalkOver)
+    }
+
     func testResolvedLabelDoesNotTurnNamedVoiceIntoNewGuest() {
         XCTAssertEqual(
             SpeakerContinuity.resolvedLabel(current: .other("Pat"), proposed: .other("guest-2")),

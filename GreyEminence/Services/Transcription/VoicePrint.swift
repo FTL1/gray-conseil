@@ -387,8 +387,8 @@ enum AcousticFootprint {
     }
 }
 
-/// Overlapping talk lands between two known voices. Fold it onto the closer
-/// one instead of minting speaker-3.
+/// Overlapping talk lands between two known voices. Label it Talk-over
+/// instead of minting speaker-3.
 enum OverlapMashup {
     static let minimumKeepSeconds: TimeInterval = 20
 
@@ -444,7 +444,7 @@ enum OverlapMashup {
                 identity: { $0.identityKey }
             ) else { return turn }
             return DiarizedSegment(
-                speaker: hit.item,
+                speaker: hit.kind == .mashup ? .talkOver : hit.item,
                 startTime: turn.startTime,
                 endTime: turn.endTime,
                 confidence: turn.confidence,
@@ -467,9 +467,7 @@ enum DualTrackOverlap {
         offset: TimeInterval,
         mic: [Float],
         system: [Float],
-        sampleRate: Float = 16_000,
-        me: Speaker?,
-        remotes: [Speaker]
+        sampleRate: Float = 16_000
     ) -> Speaker {
         guard proposed.isUnknownPlaceholder || proposed.isGuestPlaceholder else {
             return proposed
@@ -479,10 +477,7 @@ enum DualTrackOverlap {
         let micHot = micRMS >= speechRMS
         let sysHot = sysRMS >= speechRMS
         guard micHot && sysHot else { return proposed }
-        if micRMS >= sysRMS * 1.15, let me { return me }
-        if sysRMS >= micRMS * 1.15, let remote = remotes.first { return remote }
-        if let me, micRMS >= sysRMS { return me }
-        return remotes.first ?? proposed
+        return .talkOver
     }
 
     static func sliceRMS(
@@ -736,6 +731,7 @@ enum SpeakerLinkCatalog {
         if lower.hasPrefix("guest-") { return true }
         if lower.hasPrefix("unknown-") { return true }
         if lower.hasPrefix("speaker-") { return true }
+        if Speaker.isTalkOverName(name) { return true }
         return Speaker.remoteIndex(fromLegacyName: name) != nil
     }
 

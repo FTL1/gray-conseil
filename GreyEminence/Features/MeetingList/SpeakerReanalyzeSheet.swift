@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 /// Pick who was actually on the call, re-analyze from saved audio using
-/// their voice stamps, then assign leftover unknown-N clusters.
+/// their voice stamps, then assign leftover Talk-over and speaker-N clusters.
 struct SpeakerReanalyzeSheet: View {
     let meeting: Meeting
     let contacts: [Contact]
@@ -77,8 +77,8 @@ struct SpeakerReanalyzeSheet: View {
             Text("Re-analyze speakers")
                 .font(.headline)
             Text(result == nil
-                 ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used, including room/mic character when that box was on. Overlapping talk that used to mint a third speaker is folded back onto the two real voices when possible. Lines currently labeled as you are re-checked."
-                 : "Assign leftover unknown voices to someone on the call, a contact, or a typed name. A voice stamp is saved for each assignment.")
+                 ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used, including room/mic character when that box was on. Overlapping talk lands on Talk-over instead of a third person. Lines currently labeled as you are re-checked."
+                 : "Assign leftover Talk-over and unnamed voices to someone on the call, a contact, or a typed name. A voice stamp is saved for each assignment.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -114,7 +114,7 @@ struct SpeakerReanalyzeSheet: View {
                 }
                 .disabled(person.isMe || isWorking)
             }
-            Text("A waveform means this person already has a voice stamp. Unchecked people are not used as matches, so leftover clusters stay unknown instead of being named as someone who was not on the call.")
+            Text("A waveform means this person already has a voice stamp. Unchecked people are not used as matches, so leftover clusters stay Talk-over or speaker-N instead of being named as someone who was not on the call.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

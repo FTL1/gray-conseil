@@ -259,7 +259,7 @@ actor SpeakerDiarizationService {
             in: enrolled,
             identity: { $0.identityKey }
         ) {
-            return match.item
+            return Self.speaker(for: match)
         }
         let session = voicePrints.map {
             (item: $0.speaker, embedding: $0.embedding, footprint: [Float]?.none, usesFootprint: false)
@@ -270,9 +270,15 @@ actor SpeakerDiarizationService {
             identity: { $0.identityKey },
             uniqueThreshold: VoicePrintMatcher.sessionDistance
         ) {
-            return match.item
+            return Self.speaker(for: match)
         }
         return nil
+    }
+
+    private static func speaker(
+        for match: (item: Speaker, distance: Float, kind: VoicePrintMatcher.AssignmentKind)
+    ) -> Speaker {
+        match.kind == .mashup ? .talkOver : match.item
     }
 
     private func rememberVoice(_ speaker: Speaker, embedding: [Float]) {
@@ -594,8 +600,8 @@ enum MeetingSpeakerRecovery {
 
     /// Relabel transcript lines from system audio. Seeded stamps (the full
     /// collection per person, including in-session captures) are matched
-    /// first; leftovers become unknown-N. Lines currently labeled Me are
-    /// included so a remote voice that was stamped as you can be corrected.
+    /// first; leftovers become Talk-over or speaker-N. Lines currently labeled
+    /// Me are included so a remote voice that was stamped as you can be corrected.
     @MainActor
     static func recover(
         meeting: Meeting,
@@ -642,8 +648,6 @@ enum MeetingSpeakerRecovery {
             expected: expected
         )
         let offset = meeting.audioStartOffset
-        let me = expected.first(where: \.isMe)?.speaker
-        let remotes = expected.filter { !$0.isMe }.map(\.speaker)
         let ranges = labeled.map {
             (
                 speaker: $0.speaker,
@@ -667,9 +671,7 @@ enum MeetingSpeakerRecovery {
                 end: segment.endTime,
                 offset: offset,
                 mic: micSamples,
-                system: samples,
-                me: me,
-                remotes: remotes
+                system: samples
             )
             if !used.contains(where: { $0.matchesIdentity(speaker) }) {
                 used.append(speaker)
@@ -689,8 +691,8 @@ enum MeetingSpeakerRecovery {
             embeddings[item.speaker.identityKey] = item.embedding
         }
 
-        let unknown = used.filter(\.isUnknownPlaceholder)
-        let matched = used.filter { !$0.isUnknownPlaceholder }
+        let unknown = used.filter { $0.isGuestPlaceholder }
+        let matched = used.filter { !$0.isGuestPlaceholder }
         return Result(
             changed: changed,
             unknownSpeakers: unknown,

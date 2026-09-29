@@ -1605,7 +1605,7 @@ struct TranscriptPanelView: View {
                 if result.changed > 0 {
                     let leftover = result.unknownSpeakers.isEmpty
                         ? "Named voices were matched from saved prints."
-                        : "Leftovers are speaker-1…. Assign them in the sheet."
+                        : "Leftovers are Talk-over or speaker-1…. Assign them in the sheet."
                     TransientActivityCoordinator.shared.flash(
                         "Re-analyzed \(result.changed) line\(result.changed == 1 ? "" : "s") from audio. \(leftover)"
                     )

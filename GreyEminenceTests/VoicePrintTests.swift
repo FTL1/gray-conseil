@@ -328,7 +328,7 @@ final class VoicePrintTests: XCTestCase {
         XCTAssertEqual(hit?.item, "wet")
     }
 
-    func testDualTrackOverlapFoldsUnknownOntoTheLouderTrack() {
+    func testDualTrackOverlapLabelsUnknownAsTalkOver() {
         let mic = [Float](repeating: 0.2, count: 16_000)
         let system = [Float](repeating: 0.02, count: 16_000)
         let assigned = DualTrackOverlap.resolve(
@@ -337,31 +337,41 @@ final class VoicePrintTests: XCTestCase {
             end: 1,
             offset: 0,
             mic: mic,
-            system: system,
-            me: .me,
-            remotes: [.other("Pat")]
+            system: system
         )
-        XCTAssertTrue(assigned.isMe)
+        XCTAssertTrue(assigned.isTalkOver)
+        XCTAssertEqual(assigned.displayName, Speaker.talkOverDisplayName)
         let named = DualTrackOverlap.resolve(
             proposed: .other("Pat"),
             start: 0,
             end: 1,
             offset: 0,
             mic: mic,
-            system: system,
-            me: .me,
-            remotes: [.other("Pat")]
+            system: system
         )
         XCTAssertEqual(named.displayName, "Pat")
+        let quietSystem = [Float](repeating: 0.001, count: 16_000)
+        let leftover = DualTrackOverlap.resolve(
+            proposed: .other("speaker-1"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: quietSystem
+        )
+        XCTAssertEqual(leftover.displayName, "speaker-1")
     }
 
     func testPlaceholderNames() {
         XCTAssertTrue(SpeakerLinkCatalog.isPlaceholder("guest-1"))
         XCTAssertTrue(SpeakerLinkCatalog.isPlaceholder("Me"))
         XCTAssertTrue(SpeakerLinkCatalog.isPlaceholder("Speaker 2"))
+        XCTAssertTrue(SpeakerLinkCatalog.isPlaceholder("Talk-over"))
+        XCTAssertTrue(SpeakerLinkCatalog.isPlaceholder("overlap"))
         XCTAssertFalse(SpeakerLinkCatalog.isPlaceholder("Pat"))
         XCTAssertTrue(Speaker.other("guest-2").displayNameIsPlaceholder)
         XCTAssertTrue(Speaker.other("unknown-1").displayNameIsPlaceholder)
+        XCTAssertTrue(Speaker.talkOver.displayNameIsPlaceholder)
         XCTAssertFalse(Speaker.other("Pat").displayNameIsPlaceholder)
     }
 }
