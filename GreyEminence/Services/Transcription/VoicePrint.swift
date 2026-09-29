@@ -398,22 +398,22 @@ enum OverlapMashup {
         sampleRate: Float = 16_000,
         expected: [MeetingSpeakerRecovery.ExpectedSpeaker]
     ) -> [DiarizedSegment] {
-        let known: [(item: Speaker, embedding: [Float], footprint: [Float]?, usesFootprint: Bool)] = expected.flatMap { person in
+        var known: [(item: Speaker, embedding: [Float], footprint: [Float]?, usesFootprint: Bool)] = []
+        for person in expected {
             let prints = person.allEmbeddings()
-            guard !prints.isEmpty else { return [] }
-            return prints.enumerated().map { index, embedding in
+            for (index, embedding) in prints.enumerated() {
                 let foot: [Float]?
                 if person.footprints.isEmpty {
                     foot = nil
                 } else {
                     foot = person.footprints[min(index, person.footprints.count - 1)]
                 }
-                return (
+                known.append((
                     item: person.speaker,
                     embedding: embedding,
                     footprint: foot,
                     usesFootprint: person.usesFootprint
-                )
+                ))
             }
         }
         guard !known.isEmpty else { return turns }
@@ -424,7 +424,6 @@ enum OverlapMashup {
         }
 
         return turns.map { turn in
-            let duration = max(0, turn.endTime - turn.startTime)
             let weak = turn.speaker.isUnknownPlaceholder
                 || turn.speaker.isGuestPlaceholder
                 || (totals[turn.speaker.identityKey] ?? 0) < minimumKeepSeconds
