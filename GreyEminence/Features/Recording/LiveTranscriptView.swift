@@ -446,7 +446,8 @@ struct LiveTranscriptView: View {
             transcriptNames: names,
             attendeeNames: attendees.map(\.name),
             meName: SpeakerNames.effectiveMeName,
-            currentSpeakerName: speaker.displayName
+            currentSpeakerName: speaker.displayName,
+            currentIsMe: speaker.isMe
         )
     }
 

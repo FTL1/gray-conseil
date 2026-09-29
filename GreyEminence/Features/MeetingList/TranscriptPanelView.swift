@@ -824,7 +824,8 @@ struct TranscriptPanelView: View {
             transcriptNames: names,
             attendeeNames: meeting.attendees.map(\.name),
             meName: SpeakerNames.effectiveMeName,
-            currentSpeakerName: speaker.displayName
+            currentSpeakerName: speaker.displayName,
+            currentIsMe: speaker.isMe
         )
     }
 

@@ -16,10 +16,6 @@ struct EditableTranscriptSegmentRow: View {
     var onSeekToTime: ((TimeInterval) -> Void)?
     var onPlayLine: (() -> Void)?
     var isPlayingLine: Bool = false
-    var speakerActions: SpeakerBadgeActions = SpeakerBadgeActions()
-    var highlightQuery: String = ""
-    /// Click the speaker badge to show only that voice's lines.
-    var onFilterSpeaker: ((Speaker) -> Void)?
     /// Play (or stop) the recorded audio behind this segment. Only offered
     /// for completed meetings whose audio is on disk to be read.
     var onPlayAudio: (() -> Void)?
@@ -27,6 +23,10 @@ struct EditableTranscriptSegmentRow: View {
     /// Why the last play attempt for this segment failed, shown in the
     /// button's tooltip so a missing file explains itself.
     var playbackFailure: String?
+    var speakerActions: SpeakerBadgeActions = SpeakerBadgeActions()
+    var highlightQuery: String = ""
+    /// Click the speaker badge to show only that voice's lines.
+    var onFilterSpeaker: ((Speaker) -> Void)?
 
     @State private var isEditingText = false
     @State private var editedText: String = ""

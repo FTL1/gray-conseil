@@ -2251,10 +2251,7 @@ final class RecordingViewModel {
             if let context = modelContext {
                 PersistenceGate.save(context, site: "enrollVoicePrint", critical: false, meetingID: currentMeeting?.id)
             }
-            let enrolledSpeaker: Speaker = contact.id == Meeting.storedMyContactID
-                ? Speaker.resolvedMe()
-                : .other(contact.name)
-            await coordinator.seedEnrolledPrints([(enrolledSpeaker, embedding)])
+            await seedEnrolledVoicePrints()
             voicePrintProgress = .idle
             log.log(
                 "Enrolled voice print for \(contact.name) (\(contact.voicePrintSampleCount) on file)",

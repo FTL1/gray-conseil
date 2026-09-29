@@ -88,6 +88,50 @@ final class VoicePrintTests: XCTestCase {
         XCTAssertFalse(groups.priorSpeakers.contains { $0.name == "Random" })
     }
 
+    func testMeDisplayingAnotherNameIsNotAlreadyThatPerson() {
+        let robert = SpeakerLinkPerson(
+            contactID: UUID(),
+            name: "Robert Berube",
+            hasVoicePrint: true,
+            aliases: [],
+            meetingCount: 2,
+            isThisVoice: false
+        )
+        let groups = SpeakerLinkCatalog.groups(
+            people: [robert],
+            transcriptNames: ["Robert Berube"],
+            attendeeNames: ["Robert Berube"],
+            meName: "Clay",
+            currentSpeakerName: "Robert Berube",
+            currentIsMe: true
+        )
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isThisVoice, true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isMe, true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.isThisVoice, false)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.asSpeaker().isMe, false)
+    }
+
+    func testNamedRemoteIsThisVoiceWhenIdentityMatches() {
+        let robert = SpeakerLinkPerson(
+            contactID: UUID(),
+            name: "Robert Berube",
+            hasVoicePrint: true,
+            aliases: [],
+            meetingCount: 2,
+            isThisVoice: false
+        )
+        let groups = SpeakerLinkCatalog.groups(
+            people: [robert],
+            transcriptNames: ["Robert Berube"],
+            attendeeNames: ["Robert Berube"],
+            meName: "Clay",
+            currentSpeakerName: "Robert Berube",
+            currentIsMe: false
+        )
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isThisVoice, false)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.isThisVoice, true)
+    }
+
     func testCollectionAppendsInsteadOfOverwriting() {
         let contact = Contact(name: "Pat")
         contact.addVoicePrint([1, 0, 0, 0, 0, 0, 0, 0], source: VoicePrintSource.session)

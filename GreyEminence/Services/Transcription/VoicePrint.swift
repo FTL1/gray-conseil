@@ -218,7 +218,8 @@ enum SpeakerLinkCatalog {
         transcriptNames: [String],
         attendeeNames: [String],
         meName: String?,
-        currentSpeakerName: String
+        currentSpeakerName: String,
+        currentIsMe: Bool = false
     ) -> SpeakerLinkGroups {
         var meetingNames: [String] = []
         func consider(_ raw: String) {
@@ -238,6 +239,11 @@ enum SpeakerLinkCatalog {
             if let meName, isMeName(name, meName: meName) {
                 person.isMe = true
             }
+            person.isThisVoice = isCurrentVoice(
+                person,
+                currentSpeakerName: currentSpeakerName,
+                currentIsMe: currentIsMe
+            )
             return person
         }
 
@@ -250,7 +256,11 @@ enum SpeakerLinkCatalog {
                 continue
             }
             var copy = person
-            copy.isThisVoice = matches(person, name: currentSpeakerName)
+            copy.isThisVoice = isCurrentVoice(
+                copy,
+                currentSpeakerName: currentSpeakerName,
+                currentIsMe: currentIsMe
+            )
             prior.append(copy)
         }
         prior.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -295,6 +305,19 @@ enum SpeakerLinkCatalog {
         if person.isMe, isMeName(name, meName: person.name) { return true }
         if person.name.compare(name, options: .caseInsensitive) == .orderedSame { return true }
         return person.aliases.contains { $0.compare(name, options: .caseInsensitive) == .orderedSame }
+    }
+
+    /// A Me line renamed to someone else's name is still Me. The Speakers
+    /// list must not treat that name match as "already assigned" or the
+    /// click that would turn this voice into that person is a no-op.
+    private static func isCurrentVoice(
+        _ person: SpeakerLinkPerson,
+        currentSpeakerName: String,
+        currentIsMe: Bool
+    ) -> Bool {
+        if person.isMe { return currentIsMe }
+        if currentIsMe { return false }
+        return matches(person, name: currentSpeakerName)
     }
 
     private static func isMeName(_ name: String, meName: String) -> Bool {

@@ -75,7 +75,16 @@ enum VoicePrintEnrollment {
     ) -> Contact? {
         if let mapped { return mapped }
         if speaker.isMe, let myID = Meeting.storedMyContactID {
-            if let me = contacts.first(where: { $0.id == myID }) { return me }
+            if let me = contacts.first(where: { $0.id == myID }) {
+                let display = speaker.displayName
+                if !me.matchesSpeakerName(display),
+                   let other = contacts.first(where: {
+                       !$0.isArchived && $0.id != myID && $0.matchesSpeakerName(display)
+                   }) {
+                    return other
+                }
+                return me
+            }
         }
         if speaker.isGuestPlaceholder { return nil }
         return contacts.first { $0.matchesSpeakerName(speaker.displayName) }

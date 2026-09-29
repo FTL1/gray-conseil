@@ -50,6 +50,8 @@ jobs:
             -destination "platform=macOS,arch=arm64" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData-test" \
             -only-testing:GreyEminenceTests/SpeakerRelabelTests \
+            -only-testing:GreyEminenceTests/VoicePrintTests \
+            -only-testing:GreyEminenceTests/SegmentAudioLocatorTests \
             -only-testing:GreyEminenceTests/SpeakerPaletteTests \
             -only-testing:GreyEminenceTests/LibrarySearchTests \
             -only-testing:GreyEminenceTests/TranscriptAutoMergeTests \
