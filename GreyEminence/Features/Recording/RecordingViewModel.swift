@@ -2218,18 +2218,18 @@ final class RecordingViewModel {
 
         do {
             var embedding = await coordinator.voicePrint(for: speaker)
-            if embedding == nil || (embedding?.count ?? 0) < 8 {
-                guard let meeting = currentMeeting else {
-                    throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
-                }
-                guard let request = VoicePrintEnrollment.request(
+            var footprint: [Float] = []
+            if let meeting = currentMeeting,
+               let request = VoicePrintEnrollment.request(
                     for: speaker,
                     in: meeting,
                     segments: segments
-                ) else {
-                    throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
+               ) {
+                let extracted = try await VoicePrintEnrollment.extract(request)
+                if embedding == nil || (embedding?.count ?? 0) < 8 {
+                    embedding = extracted.embedding
                 }
-                embedding = try await VoicePrintEnrollment.extractEmbedding(request)
+                footprint = extracted.footprint
             }
             guard let embedding, embedding.count >= 8 else {
                 throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
@@ -2239,7 +2239,9 @@ final class RecordingViewModel {
             contact.addVoicePrint(
                 embedding,
                 meetingID: currentMeeting?.id,
-                source: VoicePrintSource.session
+                source: VoicePrintSource.session,
+                footprint: footprint,
+                usesFootprint: VoicePrintSettings.includeFootprint
             )
             speakerContactMapper.remember(speaker.displayName, contact: contact)
             if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {

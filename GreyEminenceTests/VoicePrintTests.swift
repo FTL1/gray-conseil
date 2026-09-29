@@ -148,6 +148,21 @@ final class VoicePrintTests: XCTestCase {
         XCTAssertEqual(contact.voicePrintSampleCount, 1)
     }
 
+    func testDuplicateCanGainAFootprint() {
+        let contact = Contact(name: "Pat")
+        let sample = [Float](repeating: 0.4, count: 8)
+        contact.addVoicePrint(sample, source: VoicePrintSource.session)
+        XCTAssertFalse(contact.voicePrintSamples().contains(where: \.usesFootprint))
+        contact.addVoicePrint(
+            sample,
+            source: VoicePrintSource.session,
+            footprint: [1, 0, 0, 0, 0, 0, 0, 0],
+            usesFootprint: true
+        )
+        XCTAssertEqual(contact.voicePrintSampleCount, 1)
+        XCTAssertTrue(contact.voicePrintSamples().contains(where: \.usesFootprint))
+    }
+
     func testIsolationRemovesCollidingPrintsFromOthers() {
         let me = Contact(name: "Alex")
         let robert = Contact(name: "Robert")
@@ -226,6 +241,118 @@ final class VoicePrintTests: XCTestCase {
             myContactID: me.id
         )
         XCTAssertEqual(Set(seeded.map(\.name)), Set(["Alex", "Sam"]))
+    }
+
+    func testLegacySampleJSONStillDecodesWithoutFootprint() throws {
+        let sample = VoicePrintSample.make(
+            embedding: [1, 0, 0, 0, 0, 0, 0, 0],
+            source: VoicePrintSource.session
+        )
+        let encoded = try JSONEncoder().encode(sample)
+        var object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        object.removeValue(forKey: "footprint")
+        object.removeValue(forKey: "usesFootprint")
+        let stripped = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(VoicePrintSample.self, from: stripped)
+        XCTAssertFalse(decoded.usesFootprint)
+        XCTAssertNil(decoded.footprint)
+        XCTAssertEqual(decoded.floats()?.count, 8)
+    }
+
+    func testFootprintSineAndNoiseAreDifferent() {
+        let n = 16_000
+        var sine = [Float](repeating: 0, count: n)
+        var noise = [Float](repeating: 0, count: n)
+        var seed: UInt32 = 42
+        for i in 0..<n {
+            sine[i] = sin(2 * Float.pi * 440 * Float(i) / 16_000)
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            noise[i] = Float(Int(seed >> 16) % 2000) / 1_000 - 1
+        }
+        let a = AcousticFootprint.extract(sine)
+        let b = AcousticFootprint.extract(noise)
+        XCTAssertEqual(a.count, AcousticFootprint.dimension)
+        XCTAssertEqual(b.count, AcousticFootprint.dimension)
+        XCTAssertGreaterThan(VoicePrintMatcher.cosineDistance(a, b), 0.05)
+    }
+
+    func testFootprintEchoRaisesLateEnvelopeCorrelation() {
+        let n = 32_000
+        var dry = [Float](repeating: 0, count: n)
+        var seed: UInt32 = 7
+        for i in 0..<n {
+            seed = seed &* 1_664_525 &+ 1_013_904_223
+            dry[i] = Float(Int(seed >> 16) % 2000) / 1_000 - 1
+        }
+        var wet = dry
+        let delay = 1_600
+        for i in delay..<n { wet[i] += 0.8 * dry[i - delay] }
+        let dryPrint = AcousticFootprint.extract(dry)
+        let wetPrint = AcousticFootprint.extract(wet)
+        XCTAssertGreaterThan(VoicePrintMatcher.cosineDistance(dryPrint, wetPrint), 0.001)
+    }
+
+    func testMashupDoesNotMintAThirdPerson() {
+        let a: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        let b: [Float] = [0, 1, 0, 0, 0, 0, 0, 0]
+        let mix: [Float] = [0.7071, 0.7071, 0, 0, 0, 0, 0, 0]
+        let hit = VoicePrintMatcher.identityAssignment(
+            embedding: mix,
+            in: [
+                (item: "clay", embedding: a, footprint: nil, usesFootprint: false),
+                (item: "robert", embedding: b, footprint: nil, usesFootprint: false)
+            ],
+            identity: { $0 }
+        )
+        XCTAssertNotNil(hit)
+        XCTAssertEqual(hit?.kind, .mashup)
+        XCTAssertTrue(hit?.item == "clay" || hit?.item == "robert")
+    }
+
+    func testFootprintPullsACloseVoiceMatch() {
+        let voiceA: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        let voiceB: [Float] = [0.95, 0.3, 0, 0, 0, 0, 0, 0]
+        let footA: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        let footB: [Float] = [0, 1, 0, 0, 0, 0, 0, 0]
+        let probeVoice = voiceB
+        let probeFoot = footA
+        let hit = VoicePrintMatcher.identityAssignment(
+            embedding: probeVoice,
+            footprint: probeFoot,
+            in: [
+                (item: "wet", embedding: voiceA, footprint: footA, usesFootprint: true),
+                (item: "dry", embedding: voiceB, footprint: footB, usesFootprint: true)
+            ],
+            identity: { $0 }
+        )
+        XCTAssertEqual(hit?.item, "wet")
+    }
+
+    func testDualTrackOverlapFoldsUnknownOntoTheLouderTrack() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0.02, count: 16_000)
+        let assigned = DualTrackOverlap.resolve(
+            proposed: .other("speaker-1"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me,
+            remotes: [.other("Pat")]
+        )
+        XCTAssertTrue(assigned.isMe)
+        let named = DualTrackOverlap.resolve(
+            proposed: .other("Pat"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me,
+            remotes: [.other("Pat")]
+        )
+        XCTAssertEqual(named.displayName, "Pat")
     }
 
     func testPlaceholderNames() {

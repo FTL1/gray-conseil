@@ -896,12 +896,15 @@ struct TranscriptPanelView: View {
                 ) else {
                     throw VoicePrintEnrollment.EnrollmentError.notEnoughAudio
                 }
-                let embedding = try await VoicePrintEnrollment.extractEmbedding(request)
+                let extracted = try await VoicePrintEnrollment.extract(request)
+                let embedding = extracted.embedding
                 VoicePrintIsolation.isolate(embedding, owner: contact, among: Array(contacts))
                 contact.addVoicePrint(
                     embedding,
                     meetingID: meeting.id,
-                    source: VoicePrintSource.session
+                    source: VoicePrintSource.session,
+                    footprint: extracted.footprint,
+                    usesFootprint: VoicePrintSettings.includeFootprint
                 )
                 if !contact.speakerAliases.contains(where: { $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame }) {
                     contact.speakerAliases.append(speaker.displayName)

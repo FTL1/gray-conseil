@@ -57,7 +57,17 @@ enum VoicePrintEnrollment {
         )
     }
 
+    struct Extraction: Sendable {
+        var embedding: [Float]
+        var samples: [Float]
+        var footprint: [Float]
+    }
+
     static func extractEmbedding(_ request: Request) async throws -> [Float] {
+        try await extract(request).embedding
+    }
+
+    static func extract(_ request: Request) async throws -> Extraction {
         let samples = try sliceSamples(request)
         guard samples.count >= 48_000 else { throw EnrollmentError.notEnoughAudio }
         let service = SpeakerDiarizationService()
@@ -65,7 +75,11 @@ enum VoicePrintEnrollment {
         guard let embedding = try await service.extractDominantEmbedding(from: samples) else {
             throw EnrollmentError.extractionFailed
         }
-        return embedding
+        return Extraction(
+            embedding: embedding,
+            samples: samples,
+            footprint: AcousticFootprint.extract(samples)
+        )
     }
 
     static func resolveContact(

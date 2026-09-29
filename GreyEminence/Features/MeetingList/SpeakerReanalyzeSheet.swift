@@ -77,7 +77,7 @@ struct SpeakerReanalyzeSheet: View {
             Text("Re-analyze speakers")
                 .font(.headline)
             Text(result == nil
-                 ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used. Lines currently labeled as you are re-checked. Anyone who does not match becomes speaker-1, speaker-2…"
+                 ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used, including room/mic character when that box was on. Overlapping talk that used to mint a third speaker is folded back onto the two real voices when possible. Lines currently labeled as you are re-checked."
                  : "Assign leftover unknown voices to someone on the call, a contact, or a typed name. A voice stamp is saved for each assignment.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

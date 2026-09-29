@@ -29,6 +29,11 @@ struct ContactDetailView: View {
                     Text("Each meeting can add another stamp. Re-analyze matches against the whole collection.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if contact.voicePrintSamples().contains(where: \.usesFootprint) {
+                        Text("Some stamps include room and mic character (reverb, hiss, far-end mic).")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Button("Remove all voice prints", role: .destructive) {
                         contact.clearVoicePrint()
                     }

@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "voice-print-room-mic-overlap",
+            version: "0.28.4-public.6",
+            title: "Stamp the room, fold overlapping talk",
+            summary: "Save voice print can include reverb and the far-end mic, not just the voice model. Re-analyze uses that footprint. When two people talk at once, Grey Conseil keeps two speakers instead of inventing a third mashup voice.",
+            systemImage: "mic.fill",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "speaker-set-as-voice-collection",
             version: "0.28.4-public.5",
             title: "Set as, then stamp this meeting’s voice",

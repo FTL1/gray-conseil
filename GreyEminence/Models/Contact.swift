@@ -91,7 +91,9 @@ final class Contact {
     func addVoicePrint(
         _ embedding: [Float],
         meetingID: UUID? = nil,
-        source: String = VoicePrintSource.session
+        source: String = VoicePrintSource.session,
+        footprint: [Float]? = nil,
+        usesFootprint: Bool = false
     ) {
         guard embedding.count >= 8 else { return }
         var samples = VoicePrintCollectionCodec.decode(voicePrintCollectionData)
@@ -106,15 +108,26 @@ final class Contact {
                 )
             ]
         }
-        let isDuplicate = samples.contains { sample in
+        if let index = samples.firstIndex(where: { sample in
             guard let existing = sample.floats(), existing.count == embedding.count else { return false }
             return VoicePrintMatcher.cosineDistance(existing, embedding) < 0.02
-        }
-        if !isDuplicate {
-            samples.append(.make(embedding: embedding, meetingID: meetingID, source: source))
-            if samples.count > VoicePrintCollectionCodec.maxSamples {
-                samples.removeFirst(samples.count - VoicePrintCollectionCodec.maxSamples)
+        }) {
+            if usesFootprint, !samples[index].usesFootprint, let footprint, footprint.count >= 8 {
+                samples[index].footprint = VoicePrintCodec.encode(footprint)
+                samples[index].usesFootprint = true
+                persistVoicePrintSamples(samples)
             }
+            return
+        }
+        samples.append(.make(
+            embedding: embedding,
+            meetingID: meetingID,
+            source: source,
+            footprint: footprint,
+            usesFootprint: usesFootprint
+        ))
+        if samples.count > VoicePrintCollectionCodec.maxSamples {
+            samples.removeFirst(samples.count - VoicePrintCollectionCodec.maxSamples)
         }
         persistVoicePrintSamples(samples)
     }

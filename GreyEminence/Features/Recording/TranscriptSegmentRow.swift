@@ -203,6 +203,7 @@ struct SpeakerActionPopover: View {
     @State private var renameDraft: String = ""
     @State private var searchDraft: String = ""
     @State private var searchTask: Task<Void, Never>?
+    @AppStorage("voicePrintIncludeFootprint") private var includeRoomCharacter = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -589,6 +590,14 @@ struct SpeakerActionPopover: View {
                 if case .needsPerson = actions.voicePrintState { return true }
                 return false
             }())
+            Toggle("Include room and mic character", isOn: $includeRoomCharacter)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .help("The voice model tries to ignore the room. On, this stamp also keeps reverb, hiss, and the far-end mic — useful when they talk over you.")
+                .disabled({
+                    if case .working = actions.voicePrintState { return true }
+                    return false
+                }())
             voicePrintCaption
         }
     }
@@ -597,7 +606,7 @@ struct SpeakerActionPopover: View {
     private var voicePrintCaption: some View {
         switch actions.voicePrintState {
         case .ready(let onto):
-            Text(onto.map { "Captures this voice from this meeting’s audio and saves it to \($0). Re-analyze uses the full collection, not a single overwritten stamp." }
+            Text(onto.map { "Captures this voice from this meeting’s audio and saves it to \($0). Re-analyze uses the full collection. Room/mic character is \(includeRoomCharacter ? "included" : "left out") of this stamp." }
                  ?? "Pick someone above, then save a voice print from this meeting’s audio.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)

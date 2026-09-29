@@ -135,11 +135,11 @@ Instead of only “Link Contact…” opening a generic directory:
 
 **Where:** speaker menu → **Enroll voice print**, or the People chip chevron. Also **People →** that contact’s card.
 
-Saves this voice onto a People contact. The **next** recording loads every enrolled print before guests appear. A new diarizer ID that matches Pat is labeled **Pat**, not `guest-2`.
+Captures this voice from this meeting’s audio and appends it to that person’s collection. **Include room and mic character** (on by default) also stores reverb, hiss, and the far-end mic so a wet connection stays identifiable when they talk over you.
 
 - You cannot enroll a nameless `guest-N`. Pick the person first.
-- Enrolling again averages the new sample into the stored print.
-- **People** shows a waveform on anyone who has a print. The contact card can remove it.
+- Saving again adds another stamp. Re-analyze matches the whole collection.
+- Overlapping talk is folded back onto the two real voices instead of minting a third mashup speaker.
 
 This is same-person recognition from audio, not a login and not a guarantee across bad call audio.
 

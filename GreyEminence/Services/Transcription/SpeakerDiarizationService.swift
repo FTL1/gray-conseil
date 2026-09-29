@@ -205,7 +205,7 @@ actor SpeakerDiarizationService {
             let result = try diarizer.performCompleteDiarization(samples, sampleRate: 16_000)
             return result.segments.map { segment in
                 DiarizedSegment(
-                    speaker: resolvedSpeaker(for: segment.speakerId),
+                    speaker: resolvedSpeaker(for: segment.speakerId, embedding: segment.embedding),
                     startTime: offset + TimeInterval(segment.startTimeSeconds),
                     endTime: offset + TimeInterval(segment.endTimeSeconds),
                     confidence: segment.qualityScore,
@@ -251,21 +251,24 @@ actor SpeakerDiarizationService {
     }
 
     private func matchingKnownVoice(_ embedding: [Float]) -> Speaker? {
-        if let match = VoicePrintMatcher.bestIdentityMatch(
+        let enrolled = enrolledPrints.map {
+            (item: $0.speaker, embedding: $0.embedding, footprint: [Float]?.none, usesFootprint: false)
+        }
+        if let match = VoicePrintMatcher.identityAssignment(
             embedding: embedding,
-            in: enrolledPrints.map { (item: $0.speaker, embedding: $0.embedding) },
-            identity: { $0.identityKey },
-            threshold: VoicePrintMatcher.enrolledDistance,
-            margin: VoicePrintMatcher.matchMargin
+            in: enrolled,
+            identity: { $0.identityKey }
         ) {
             return match.item
         }
-        if let match = VoicePrintMatcher.bestIdentityMatch(
+        let session = voicePrints.map {
+            (item: $0.speaker, embedding: $0.embedding, footprint: [Float]?.none, usesFootprint: false)
+        }
+        if let match = VoicePrintMatcher.identityAssignment(
             embedding: embedding,
-            in: voicePrints.map { (item: $0.speaker, embedding: $0.embedding) },
+            in: session,
             identity: { $0.identityKey },
-            threshold: VoicePrintMatcher.sessionDistance,
-            margin: VoicePrintMatcher.matchMargin
+            uniqueThreshold: VoicePrintMatcher.sessionDistance
         ) {
             return match.item
         }
@@ -369,7 +372,9 @@ actor SpeakerDiarizationService {
                 speaker: resolvedSpeaker(for: segment.speakerId, embedding: segment.embedding),
                 startTime: TimeInterval(segment.startTimeSeconds),
                 endTime: TimeInterval(segment.endTimeSeconds),
-                confidence: segment.qualityScore
+                confidence: segment.qualityScore,
+                speakerID: segment.speakerId,
+                embedding: segment.embedding
             )
         }
     }
@@ -468,6 +473,8 @@ enum MeetingSpeakerRecovery {
         var contactID: UUID?
         var embedding: [Float]?
         var embeddings: [[Float]] = []
+        var footprints: [[Float]] = []
+        var usesFootprint: Bool = false
         var isMe: Bool
         var isPreselected: Bool
 
@@ -517,6 +524,7 @@ enum MeetingSpeakerRecovery {
             guard !trimmed.isEmpty else { return }
             if !isMe, SpeakerLinkCatalog.isPlaceholder(trimmed) { return }
             if alreadyHas(speaker, name: trimmed) { return }
+            let stamps = contact?.voicePrintSamples() ?? []
             list.append(
                 ExpectedSpeaker(
                     name: trimmed,
@@ -524,6 +532,8 @@ enum MeetingSpeakerRecovery {
                     contactID: contact?.id,
                     embedding: contact?.voicePrintEmbedding(),
                     embeddings: contact?.voicePrintEmbeddings() ?? [],
+                    footprints: stamps.compactMap { $0.usesFootprint ? $0.footprintFloats() : nil },
+                    usesFootprint: stamps.contains(where: \.usesFootprint),
                     isMe: isMe,
                     isPreselected: preselected
                 )
@@ -605,6 +615,15 @@ enum MeetingSpeakerRecovery {
         }
         guard !samples.isEmpty else { throw RecoveryError.noSystemAudio }
 
+        var micSamples: [Float] = []
+        for url in AudioFileWriter.existingChunkURLs(
+            base: StorageManager.shared.micAudioURL(for: audioID)
+        ) {
+            if let chunk = try? HighQualityTranscriber.decodeFileTo16kFloatMono(url: url) {
+                micSamples.append(contentsOf: chunk)
+            }
+        }
+
         let service = SpeakerDiarizationService()
         try await service.prepare()
         let prints: [(speaker: Speaker, embedding: [Float])] = expected.flatMap { person in
@@ -613,11 +632,18 @@ enum MeetingSpeakerRecovery {
         if !prints.isEmpty {
             await service.seedEnrolledPrints(prints, replacingAll: true)
         }
-        let labeled = try await service.diarizeCompleteFile(
+        var labeled = try await service.diarizeCompleteFile(
             samples: samples,
             unmatchedStyle: .unknown
         )
+        labeled = OverlapMashup.reassign(
+            turns: labeled,
+            samples: samples,
+            expected: expected
+        )
         let offset = meeting.audioStartOffset
+        let me = expected.first(where: \.isMe)?.speaker
+        let remotes = expected.filter { !$0.isMe }.map(\.speaker)
         let ranges = labeled.map {
             (
                 speaker: $0.speaker,
@@ -630,11 +656,21 @@ enum MeetingSpeakerRecovery {
         var changed = 0
         var used: [Speaker] = []
         for segment in meeting.segments {
-            guard let speaker = SpeakerOverlapAssigner.speaker(
+            guard let proposed = SpeakerOverlapAssigner.speaker(
                 forStart: segment.startTime,
                 end: segment.endTime,
                 in: ranges
             ) else { continue }
+            let speaker = DualTrackOverlap.resolve(
+                proposed: proposed,
+                start: segment.startTime,
+                end: segment.endTime,
+                offset: offset,
+                mic: micSamples,
+                system: samples,
+                me: me,
+                remotes: remotes
+            )
             if !used.contains(where: { $0.matchesIdentity(speaker) }) {
                 used.append(speaker)
             }

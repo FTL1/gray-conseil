@@ -243,7 +243,7 @@ Click **Pat** in that list to tag this voice as Pat.
 **How**
 
 1. Tag the voice first if it is still `guest-N`.
-2. Right-click the badge or the chip → **Save voice print from this meeting**.
+2. Right-click the badge or the chip → **Save voice print from this meeting**. Leave **Include room and mic character** on if their mic is wet, hissy, or they talk over you.
 3. Wait. The app listens to this meeting’s saved audio (mic and system) on that person’s lines.
 4. The contact now has another print in their collection. People list shows a waveform. The contact card can **Remove all voice prints**.
 
@@ -291,7 +291,7 @@ Works in the live transcript and in a finished meeting.
 | **This meeting / Prior speakers** | Click a name to assign this voice and fill **Rename**. |
 | **Link other contact…** | Full directory. |
 | **Save as new contact** | Creates a contact from the current display name. |
-| **Save voice print from this meeting** | Adds a stamp from this meeting’s audio to that person’s collection. |
+| **Save voice print from this meeting** | Adds a stamp from this meeting’s audio to that person’s collection. **Include room and mic character** also keeps reverb and the far-end mic. |
 | **Recover guest-1, guest-2… from audio** | Only when the recording lumped every remote together. |
 
 ### Keeping the same person as the same guest
