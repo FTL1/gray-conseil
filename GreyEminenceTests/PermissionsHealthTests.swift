@@ -50,6 +50,25 @@ final class PermissionsHealthTests: XCTestCase {
         XCTAssertFalse(items.contains { $0.id == "anthropic" && $0.verdict.isProblem })
     }
 
+    func testMicrosoft365IsSkippedWhenMarkedUnused() {
+        XCTAssertEqual(
+            PermissionsHealth.microsoft365Verdict(configured: false, markedUnused: true, connected: false, needsReconnect: false),
+            .skipped
+        )
+        XCTAssertEqual(
+            PermissionsHealth.microsoft365Verdict(configured: false, markedUnused: false, connected: false, needsReconnect: false),
+            .missing
+        )
+        XCTAssertEqual(
+            PermissionsHealth.microsoft365Verdict(configured: true, markedUnused: false, connected: true, needsReconnect: false),
+            .ok
+        )
+        XCTAssertEqual(
+            PermissionsHealth.microsoft365Verdict(configured: true, markedUnused: false, connected: false, needsReconnect: false),
+            .skipped
+        )
+    }
+
     func testPrivacyURLsNeverUseBrokenSystemsettingsScheme() {
         for pane in ["Privacy_Microphone", "Privacy_ScreenCapture", "Privacy_AudioCapture", "Privacy_Calendars", "Privacy_Notifications"] {
             let urls = AudioSessionManager.privacyURLCandidates(for: pane)

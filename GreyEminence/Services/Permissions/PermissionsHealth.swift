@@ -286,14 +286,25 @@ enum PermissionsHealth {
     }
 
     private static func calendarDetail() -> String {
+        let access: String
         switch EKEventStore.authorizationStatus(for: .event) {
-        case .fullAccess, .authorized: "full access"
-        case .writeOnly: "write-only — Grey Conseil needs full access"
-        case .denied: "denied"
-        case .restricted: "restricted"
-        case .notDetermined: "not determined"
-        @unknown default: "unknown"
+        case .fullAccess, .authorized: access = "full access"
+        case .writeOnly: return "write-only — Grey Conseil needs full access"
+        case .denied: return "denied"
+        case .restricted: return "restricted"
+        case .notDetermined: return "not determined — open Settings → Calendar and allow access"
+        @unknown default: return "unknown"
         }
+        let store = EKEventStore()
+        let calendars = store.calendars(for: .event)
+        if calendars.isEmpty {
+            return "\(access) — no calendars synced to this Mac"
+        }
+        let names = calendars.prefix(8).map { cal in
+            let account = cal.source?.title ?? "?"
+            return "\(cal.title) (\(account))"
+        }.joined(separator: ", ")
+        return "\(access) — \(calendars.count) calendar(s): \(names)"
     }
 
     private static func contactsDetail() -> String {
@@ -344,15 +355,35 @@ enum PermissionsHealth {
         )
     }
 
+    /// Graph is optional. No Entra client ID is not an error unless the user
+    /// turned Graph on without pasting one.
+    static func microsoft365Verdict(configured: Bool, markedUnused: Bool, connected: Bool, needsReconnect: Bool) -> Verdict {
+        if markedUnused { return .skipped }
+        if !configured { return .missing }
+        if needsReconnect { return .warning }
+        if connected { return .ok }
+        return .skipped
+    }
+
     @MainActor
     private static func microsoft365Item() -> Item {
         let graph = GraphAuthService.shared
+        if GraphConfig.isMarkedUnused {
+            return Item(
+                id: "microsoft365",
+                title: "Microsoft 365",
+                verdict: .skipped,
+                detail: "not used — Outlook can come from macOS Calendar. Optional Graph connect is in Settings → Calendar.",
+                privacyPane: nil,
+                canValidate: false
+            )
+        }
         if !GraphConfig.isConfigured {
             return Item(
                 id: "microsoft365",
                 title: "Microsoft 365",
                 verdict: .missing,
-                detail: "No client ID — paste one in Settings → Calendar, then Connect",
+                detail: "Graph is on, but there is no Entra client ID — paste one in Settings → Calendar, or mark Graph unused",
                 privacyPane: nil,
                 canValidate: false
             )

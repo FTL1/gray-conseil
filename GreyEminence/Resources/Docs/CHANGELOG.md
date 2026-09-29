@@ -7,6 +7,10 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.4 — 2026-09-29
+
+**Calendar Settings actually shows what EventKit sees.** Request access, refresh, and a nearby-meeting list so toggling Exchange is not a silent no-op. Microsoft Graph is optional: “I am not using Microsoft Graph” (default) makes Permissions Health skip it instead of “missing client ID.”
+
 ## 0.28.4-public.3 — 2026-09-29
 
 **Recording no longer dies on Teams system audio.** ScreenCaptureKit taps far-side audio as 48 kHz stereo interleaved. public.2 opened the AAC file as planar but wrote the interleaved buffers as-is (`avfaudio -50`), then auto-stopped after 10 failures. Convert the tap to planar before writing.

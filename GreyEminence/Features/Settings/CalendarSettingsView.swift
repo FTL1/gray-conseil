@@ -4,11 +4,14 @@ struct CalendarSettingsView: View {
     @AppStorage("calendarIntegration") private var calendarIntegration = true
     @AppStorage(GraphConfig.enabledKey) private var graphEnabled = false
     @AppStorage(GraphConfig.clientIDDefaultsKey) private var graphClientID = ""
+    @AppStorage(GraphConfig.unusedKey) private var graphUnused = true
 
     @State private var graphAuth = GraphAuthService.shared
     @State private var calendarService = CalendarService()
     @State private var allCalendars: [CalendarChoice] = []
     @State private var disabledIDs: Set<String> = CalendarSelection.disabledIDs()
+    @State private var nearby: [CalendarService.NearbyPreview] = []
+    @State private var refreshNote: String?
 
     private var eventKitCalendars: [CalendarChoice] {
         allCalendars.filter { $0.source == .eventKit }
@@ -23,17 +26,38 @@ struct CalendarSettingsView: View {
             Section {
                 Toggle("Auto-detect calendar events", isOn: $calendarIntegration)
                     .helpTip(.settingsCalAutoDetect)
-                Text("Reads calendars synced to macOS (Calendar app) to auto-name recordings and match attendees.")
+                Text("Reads calendars synced to macOS (Calendar app) to auto-name recordings and match attendees. Turning a calendar on here only includes it in matching — it is not a Microsoft login.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Text(calendarService.accessStatusText)
+                    .font(.caption)
+                    .foregroundStyle(calendarService.authorizationState == .authorized ? .secondary : .orange)
+
+                HStack {
+                    Button("Request Calendar Access") {
+                        Task { await reload() }
+                    }
+                    Button("Refresh calendars") {
+                        Task { await reload() }
+                    }
+                }
+                .controlSize(.small)
+
+                if let refreshNote {
+                    Text(refreshNote)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if eventKitCalendars.isEmpty {
-                    Text("No macOS calendars detected. If your work/Teams calendar is missing, add the account in System Settings → Internet Accounts (Calendars enabled), or connect Microsoft 365 below.")
+                    Text("No macOS calendars detected. Add the Office 365 / Exchange account in System Settings → Internet Accounts (Calendars enabled). You do not need Microsoft Graph if that calendar already appears here.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     matchSubheader
                     calendarToggleList(eventKitCalendars)
+                    nearbyEventsBlock
                 }
             } header: {
                 Label("On this Mac", systemImage: "menubar.dock.rectangle")
@@ -44,10 +68,16 @@ struct CalendarSettingsView: View {
 
             // MARK: - Microsoft 365 (Graph)
             Section {
-                if graphAuth.isConnected {
-                    connectedRows
-                } else {
-                    disconnectedRows
+                Toggle("I am not using Microsoft Graph", isOn: $graphUnused)
+                Text("Leave this on if Outlook is already on this Mac. Graph is a separate Entra app login, not macOS Calendar and not Outlook.app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !graphUnused {
+                    if graphAuth.isConnected {
+                        connectedRows
+                    } else {
+                        disconnectedRows
+                    }
                 }
             } header: {
                 Label("Microsoft 365 / Teams", systemImage: "calendar.badge.plus")
@@ -55,7 +85,7 @@ struct CalendarSettingsView: View {
                     .foregroundStyle(.primary)
                     .textCase(nil)
             } footer: {
-                Text("Pulls your Outlook/Teams calendar directly over the network — useful when your work calendar isn't synced to macOS. Read-only; you can disconnect anytime.")
+                Text("Optional. Pulls Outlook/Teams over the network when the work calendar is not synced to macOS. Read-only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -68,6 +98,37 @@ struct CalendarSettingsView: View {
         await calendarService.requestAccess()
         allCalendars = await calendarService.availableCalendars()
         disabledIDs = CalendarSelection.disabledIDs()
+        nearby = calendarService.nearbyPreview()
+        if calendarService.authorizationState != .authorized {
+            refreshNote = calendarService.accessStatusText
+        } else if eventKitCalendars.isEmpty {
+            refreshNote = "Access granted, but EventKit sees 0 calendars. Check System Settings → Internet Accounts."
+        } else if nearby.isEmpty {
+            refreshNote = "\(eventKitCalendars.count) calendar(s) visible; no timed meetings in the next ±2 hours."
+        } else {
+            refreshNote = "\(eventKitCalendars.count) calendar(s), \(nearby.count) nearby meeting(s)."
+        }
+    }
+
+    @ViewBuilder
+    private var nearbyEventsBlock: some View {
+        Text("Nearby meetings (macOS Calendar, ±2 hours)")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        if nearby.isEmpty {
+            Text("None in this window. If you have an Outlook meeting now, EventKit is not seeing that calendar.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(nearby) { event in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(event.title)
+                    Text("\(event.calendarTitle) · \(event.account) · \(event.start.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var isGraphClientReady: Bool {

@@ -42,8 +42,17 @@ enum GraphConfig {
 
     /// AppStorage / UserDefaults keys (non-secret display + the enable toggle).
     static let enabledKey = "graphCalendarEnabled"
+    static let unusedKey = "graphMarkedUnused"
     static let accountEmailKey = "graphAccountEmail"
     static let accountNameKey = "graphAccountName"
+
+    /// Graph is optional. Default unused until a client ID is pasted, so
+    /// Permissions Health does not treat a missing Entra app as an error.
+    static var isMarkedUnused: Bool {
+        if isConfigured { return false }
+        if UserDefaults.standard.object(forKey: unusedKey) == nil { return true }
+        return UserDefaults.standard.bool(forKey: unusedKey)
+    }
 
     /// False until a real Entra Application (client) ID is pasted in Settings
     /// or compiled into `compiledClientID`.

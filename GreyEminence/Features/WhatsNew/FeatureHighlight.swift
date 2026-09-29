@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "calendar-preview-graph-optional",
+            version: "0.28.4-public.4",
+            title: "See if Outlook is actually visible",
+            summary: "Settings → Calendar now requests access, lists nearby meetings from macOS, and lets you mark Microsoft Graph unused so Permissions Health stops flagging a missing client ID.",
+            systemImage: "calendar",
+            tint: .orange,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "system-tap-interleaved-write",
             version: "0.28.4-public.3",
             title: "Teams / Zoom recording stays up",

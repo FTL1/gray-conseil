@@ -283,6 +283,49 @@ final class CalendarService {
         store.calendars(for: .event).map(\.title)
     }
 
+    struct NearbyPreview: Identifiable, Sendable {
+        let id: String
+        let title: String
+        let calendarTitle: String
+        let account: String
+        let start: Date
+        let end: Date
+    }
+
+    /// Meetings EventKit can see around now, for Settings so a toggle is not
+    /// a silent no-op. Empty when access is missing or the window is empty.
+    func nearbyPreview(minutes: TimeInterval = 120) -> [NearbyPreview] {
+        guard authorizationState == .authorized else { return [] }
+        store.refreshSourcesIfNecessary()
+        let selected = selectedEventKitCalendars()
+        guard !selected.isEmpty else { return [] }
+        let start = Date.now.addingTimeInterval(-minutes * 60)
+        let end = Date.now.addingTimeInterval(minutes * 60)
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: selected)
+        return store.events(matching: predicate)
+            .filter { !$0.isAllDay }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(12)
+            .map { event in
+                NearbyPreview(
+                    id: event.eventIdentifier ?? event.calendarItemIdentifier,
+                    title: event.title ?? "(no title)",
+                    calendarTitle: event.calendar.title,
+                    account: event.calendar.source?.title ?? "",
+                    start: event.startDate,
+                    end: event.endDate ?? event.startDate
+                )
+            }
+    }
+
+    var accessStatusText: String {
+        switch authorizationState {
+        case .notDetermined: "Calendar access not determined — Grey Conseil has not been allowed to read macOS Calendar yet."
+        case .authorized: "Calendar access granted."
+        case .denied: "Calendar access denied. Enable Calendars for this Grey Conseil binary in System Settings → Privacy & Security."
+        }
+    }
+
     /// Every calendar available for matching, across local + connected sources.
     /// Used by Settings to let the user choose which calendars to look in.
     func availableCalendars() async -> [CalendarChoice] {
@@ -290,7 +333,7 @@ final class CalendarService {
             CalendarChoice(
                 id: $0.calendarIdentifier,
                 title: $0.title,
-                account: $0.source?.title ?? "Local",
+                account: Self.describe($0.source),
                 source: .eventKit
             )
         }
