@@ -56,7 +56,7 @@ struct MeetingIntelligenceView: View {
                         .font(.headline)
                     }
                     .buttonStyle(.plain)
-                    .help("Open Insights — organize intelligence across meetings")
+                    .delayedHelp(.paneMeetingNotes)
 
                     Spacer()
 

@@ -7,6 +7,10 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.8 — 2026-09-30
+
+**This line only, Me from the microphone, unmatched snippets you can play.** Set as / Speakers on a transcript line retags that line. People chips at the top of the Transcript pane retag every line of a voice. Re-analyze lists every unmatched snippet with play, Me first in Assign selected to, and append onto the previous or next line. Local-mic energy is you; system/reverb is remote; both is Talk-over. Play no longer bleeds into the next or previous snippet. Panes are named Meeting list, Meeting notes, and Transcript; hover ~2 seconds for the full meaning.
+
 ## 0.28.4-public.7 — 2026-09-29
 
 **Overlapping talk is Talk-over, not speaker-3.** When two people talk at once, those lines land on one Talk-over seat (initials TO) instead of a third person. Assign it after Re-analyze. A voice that is far from everyone is still speaker-1. You cannot enroll Talk-over — pick a real person first.

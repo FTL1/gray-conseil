@@ -67,6 +67,7 @@ struct SpeakerRosterBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
+        .delayedHelp(.peopleBarAllVoices)
         .onAppear {
             SpeakerPalette.assign(contacts: Array(contacts))
         }
@@ -209,7 +210,7 @@ struct SpeakerRosterBar: View {
                 .padding(.vertical, 3)
             }
             .buttonStyle(.plain)
-            .helpTip(.heardChip)
+            .help("Unnamed voice. Click to hide. Right-click → This is … retags every line of this voice. One line: use that line’s Set as in the transcript.")
             .opacity(hidden ? 0.5 : 1)
         }
         .background(Color.primary.opacity(0.04), in: Capsule())

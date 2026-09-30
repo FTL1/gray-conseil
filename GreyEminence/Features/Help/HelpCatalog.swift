@@ -91,6 +91,11 @@ enum HelpTip: String {
     case tasksReset
     case analysisBrief
     case analysisFocus
+    case paneMeetingList
+    case paneMeetingNotes
+    case paneTranscript
+    case peopleBarAllVoices
+    case snippetSetAs
 
     var tooltip: String {
         switch self {
@@ -175,7 +180,7 @@ enum HelpTip: String {
         case .toolbarFind:
             "Library Find (⇧⌘F). ⌘F searches the open meeting."
         case .toolbarInspector:
-            "Show or hide the Insights inspector beside a meeting."
+            "Show or hide the Transcript pane on the right. Center is Meeting notes. Left is the meeting list."
 
         case .settingsMyProfile:
             "Who you are in transcripts and tasks. Pick the People contact that is you."
@@ -253,6 +258,27 @@ enum HelpTip: String {
             "Your goal for this call. Reanalyze uses it so the summary is not your project preamble. Right-click bullets to delete them for good."
         case .analysisFocus:
             "Limit Reanalyze to the second half, last 20 minutes, or a custom range. Split Into New Meeting in the transcript gives that range its own intel."
+        case .paneMeetingList:
+            "Meeting list — pick a recording. Center becomes Meeting notes; the right pane is the Transcript."
+        case .paneMeetingNotes:
+            "Meeting notes — summary, tasks, and questions for this call. The spoken lines are in the Transcript pane on the right."
+        case .paneTranscript:
+            "Transcript — the spoken lines. Set as on a line changes that line only. People chips at the top retag every line of a voice."
+        case .peopleBarAllVoices:
+            "People on this call. Click hide/show. Right-click a dashed speaker-N chip and pick This is … to retag every line of that voice. One line: use that line’s Set as."
+        case .snippetSetAs:
+            "This line only. Pick Me, someone on this call, or a contact. To retag every speaker-N line, use the People chips at the top of this pane."
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .paneMeetingList: "Meeting list"
+        case .paneMeetingNotes: "Meeting notes"
+        case .paneTranscript: "Transcript"
+        case .peopleBarAllVoices: "People"
+        case .snippetSetAs: "Set as"
+        default: ""
         }
     }
 }
@@ -260,5 +286,50 @@ enum HelpTip: String {
 extension View {
     func helpTip(_ tip: HelpTip) -> some View {
         help(tip.tooltip)
+    }
+
+    /// Hover ~2 seconds, then a named explanation. Instant tooltip stays on `.help`.
+    func delayedHelp(_ tip: HelpTip, delay: TimeInterval = 2) -> some View {
+        modifier(DelayedHelpModifier(tip: tip, delay: delay))
+    }
+}
+
+private struct DelayedHelpModifier: ViewModifier {
+    let tip: HelpTip
+    let delay: TimeInterval
+    @State private var hovering = false
+    @State private var visible = false
+    @State private var task: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { on in
+                hovering = on
+                task?.cancel()
+                if on {
+                    task = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        guard !Task.isCancelled, hovering else { return }
+                        visible = true
+                    }
+                } else {
+                    visible = false
+                }
+            }
+            .popover(isPresented: $visible, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if !tip.title.isEmpty {
+                        Text(tip.title)
+                            .font(.headline)
+                    }
+                    Text(tip.tooltip)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .frame(maxWidth: 280, alignment: .leading)
+            }
+            .help(tip.tooltip)
     }
 }

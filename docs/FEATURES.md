@@ -139,7 +139,7 @@ Captures this voice from this meeting’s audio and appends it to that person’
 
 - You cannot enroll a nameless `guest-N`. Pick the person first.
 - Saving again adds another stamp. Re-analyze matches the whole collection.
-- Overlapping talk lands on **Talk-over** instead of minting a third mashup speaker.
+- Re-analyze treats the local microphone as you, hollow/system audio as remote, and both-at-once as **Talk-over**. Set as on a line changes that line only.
 
 This is same-person recognition from audio, not a login and not a guarantee across bad call audio.
 
@@ -161,7 +161,7 @@ Grey Conseil now keeps the last remote name for about twelve seconds, will not r
 | **Rename / Apply** | This meeting. Different remotes stay different people. |
 | **Save as default name** | Only you. |
 | **Set as Me** | This voice is actually the microphone. |
-| **Undo / Revert / Re-analyze speakers** | Undo last remap. Revert original names. Re-analyze: pick who was on the call, match voice stamps, leftovers become Talk-over or speaker-1…. You stay you. |
+| **Undo / Revert / Re-analyze speakers** | Undo last remap. Revert original names. Re-analyze: pick who was on the call, match voice stamps, leftovers are listed as snippets you can play, assign (Me first), or append to the previous/next line. |
 
 Rename **before** you reanalyze if you want those names in the summary and the task list.
 

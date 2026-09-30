@@ -1,19 +1,25 @@
 import SwiftData
 import SwiftUI
 
+enum MashupAttachDirection: Sendable {
+    case previous
+    case next
+}
+
 /// Pick who was actually on the call, re-analyze from saved audio using
-/// their voice stamps, then assign leftover Talk-over and speaker-N clusters.
+/// their voice stamps, then assign leftover Talk-over and speaker-N snippets.
 struct SpeakerReanalyzeSheet: View {
     let meeting: Meeting
     let contacts: [Contact]
     var isWorking: Bool
     var result: MeetingSpeakerRecovery.Result?
     var onRun: ([MeetingSpeakerRecovery.ExpectedSpeaker]) -> Void
-    var onAssign: ([Speaker], Speaker, Contact?) -> Void
+    var onAssign: ([UUID], Speaker, Contact?) -> Void
+    var onAttach: ((UUID, MashupAttachDirection) -> Void)?
     var onDismiss: () -> Void
 
     @State private var selectedIDs: Set<String> = []
-    @State private var unknownSelected: Set<Speaker.IdentityKey> = []
+    @State private var unknownSelected: Set<UUID> = []
     @State private var typedName = ""
     @State private var showContactPicker = false
     @State private var didSeedSelection = false
@@ -26,14 +32,16 @@ struct SpeakerReanalyzeSheet: View {
         candidates.filter { selectedIDs.contains($0.id) }
     }
 
-    private var unknownRows: [(speaker: Speaker, count: Int, sample: String)] {
+    private var unknownSnippets: [TranscriptSegment] {
         guard let result else { return [] }
-        return result.unknownSpeakers.map { speaker in
-            let lines = meeting.segments.filter { $0.speaker.matchesIdentity(speaker) }
-            let sample = lines.first(where: { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.text
-                ?? ""
-            return (speaker, lines.count, sample)
-        }
+        let keys = Set(result.unknownSpeakers.map(\.identityKey))
+        return meeting.segments
+            .sorted { $0.startTime < $1.startTime }
+            .filter { keys.contains($0.speaker.identityKey) }
+    }
+
+    private var sortedMeetingSegments: [TranscriptSegment] {
+        meeting.segments.sorted { $0.startTime < $1.startTime }
     }
 
     var body: some View {
@@ -53,7 +61,7 @@ struct SpeakerReanalyzeSheet: View {
             Divider()
             footer
         }
-        .frame(width: 460, height: 540)
+        .frame(width: 520, height: 620)
         .onAppear {
             guard !didSeedSelection else { return }
             didSeedSelection = true
@@ -65,7 +73,7 @@ struct SpeakerReanalyzeSheet: View {
                 prioritizedContacts: meeting.attendees,
                 includeAppleDirectory: true
             ) { contact in
-                assignSelectedUnknowns(to: .other(contact.name), contact: contact)
+                assignSelectedSnippets(to: .other(contact.name), contact: contact)
                 showContactPicker = false
             }
             .frame(width: 280, height: 320)
@@ -78,7 +86,7 @@ struct SpeakerReanalyzeSheet: View {
                 .font(.headline)
             Text(result == nil
                  ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used, including room/mic character when that box was on. Overlapping talk lands on Talk-over instead of a third person. Lines currently labeled as you are re-checked."
-                 : "Assign leftover Talk-over and unnamed voices to someone on the call, a contact, or a typed name. A voice stamp is saved for each assignment.")
+                 : "Every unmatched snippet is listed. Play it, assign it (Me is first), or append it onto the previous or next line.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -134,7 +142,7 @@ struct SpeakerReanalyzeSheet: View {
                 }
             }
 
-            if unknownRows.isEmpty {
+            if unknownSnippets.isEmpty {
                 Label("No unmatched voices. Every remote cluster matched a selected voice stamp.", systemImage: "checkmark.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -143,49 +151,37 @@ struct SpeakerReanalyzeSheet: View {
                     Text("Unmatched voices")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
-                    Button(unknownSelected.count == unknownRows.count ? "Clear" : "Select all") {
-                        if unknownSelected.count == unknownRows.count {
+                    Button(unknownSelected.count == unknownSnippets.count ? "Clear" : "Select all") {
+                        if unknownSelected.count == unknownSnippets.count {
                             unknownSelected = []
                         } else {
-                            unknownSelected = Set(unknownRows.map { $0.speaker.identityKey })
+                            unknownSelected = Set(unknownSnippets.map(\.id))
                         }
                     }
                     .controlSize(.small)
                 }
-                ForEach(unknownRows, id: \.speaker.identityKey) { row in
-                    Toggle(isOn: unknownBinding(row.speaker)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(row.speaker.displayName)
-                                    .font(.body.weight(.semibold))
-                                Text(row.count == 1 ? "1 line" : "\(row.count) lines")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if !row.sample.isEmpty {
-                                Text(row.sample)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(2)
-                            }
-                        }
-                    }
+                ForEach(unknownSnippets, id: \.id) { snippet in
+                    unmatchedRow(snippet)
                 }
 
                 Text("Assign selected to")
                     .font(.subheadline.weight(.semibold))
                     .padding(.top, 4)
 
-                let known = selectedPeople.filter { !$0.isMe }
-                if !known.isEmpty {
-                    FlowLayout(spacing: 6, rowAlignment: .center) {
-                        ForEach(known) { person in
-                            Button(person.name) {
-                                assignSelectedUnknowns(to: person.speaker, contact: contact(for: person))
-                            }
-                            .controlSize(.small)
-                            .disabled(unknownSelected.isEmpty)
+                FlowLayout(spacing: 6, rowAlignment: .center) {
+                    Button("Me") {
+                        assignSelectedSnippets(to: Speaker.resolvedMe(), contact: nil)
+                    }
+                    .controlSize(.small)
+                    .disabled(unknownSelected.isEmpty)
+                    .help("This snippet is you (the local microphone).")
+
+                    ForEach(selectedPeople.filter { !$0.isMe }) { person in
+                        Button(person.name) {
+                            assignSelectedSnippets(to: person.speaker, contact: contact(for: person))
                         }
+                        .controlSize(.small)
+                        .disabled(unknownSelected.isEmpty)
                     }
                 }
 
@@ -247,35 +243,95 @@ struct SpeakerReanalyzeSheet: View {
         )
     }
 
-    private func unknownBinding(_ speaker: Speaker) -> Binding<Bool> {
+    @ViewBuilder
+    private func unmatchedRow(_ snippet: TranscriptSegment) -> some View {
+        let playing = SegmentAudioPlayer.shared.playingSegmentID == snippet.id
+        HStack(alignment: .top, spacing: 8) {
+            Toggle(isOn: unknownBinding(snippet.id)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(snippet.formattedTimestamp)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.tertiary)
+                        Text(snippet.speaker.displayName)
+                            .font(.body.weight(.semibold))
+                    }
+                    Text(snippet.text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
+            VStack(spacing: 4) {
+                Button {
+                    playSnippet(snippet)
+                } label: {
+                    Image(systemName: playing ? "stop.circle.fill" : "play.circle")
+                }
+                .buttonStyle(.plain)
+                .help(playing ? "Stop" : "Play this unmatched snippet")
+                Button("← prior") {
+                    onAttach?(snippet.id, .previous)
+                    unknownSelected.remove(snippet.id)
+                }
+                .controlSize(.mini)
+                .disabled(sortedMeetingSegments.first?.id == snippet.id)
+                .help("Append this mashup onto the previous line and its speaker.")
+                Button("next →") {
+                    onAttach?(snippet.id, .next)
+                    unknownSelected.remove(snippet.id)
+                }
+                .controlSize(.mini)
+                .disabled(sortedMeetingSegments.last?.id == snippet.id)
+                .help("Append this mashup onto the next line and its speaker.")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func unknownBinding(_ id: UUID) -> Binding<Bool> {
         Binding(
-            get: { unknownSelected.contains(speaker.identityKey) },
+            get: { unknownSelected.contains(id) },
             set: { on in
                 if on {
-                    unknownSelected.insert(speaker.identityKey)
+                    unknownSelected.insert(id)
                 } else {
-                    unknownSelected.remove(speaker.identityKey)
+                    unknownSelected.remove(id)
                 }
             }
         )
     }
 
-    private func selectedUnknownSpeakers() -> [Speaker] {
-        unknownRows.map(\.speaker).filter { unknownSelected.contains($0.identityKey) }
+    private func playSnippet(_ snippet: TranscriptSegment) {
+        let sorted = sortedMeetingSegments
+        let index = sorted.firstIndex(where: { $0.id == snippet.id })
+        let nextStart = index.flatMap { idx -> TimeInterval? in
+            let next = idx + 1
+            return next < sorted.count ? sorted[next].startTime : nil
+        }
+        let previousEnd = index.flatMap { idx -> TimeInterval? in
+            idx > 0 ? sorted[idx - 1].endTime : nil
+        }
+        SegmentAudioPlayer.shared.toggle(
+            snippet,
+            in: meeting,
+            until: nextStart,
+            previousEnd: previousEnd
+        )
     }
 
     private func assignTypedName() {
         let name = typedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let contact = contacts.first { $0.matchesSpeakerName(name) }
-        assignSelectedUnknowns(to: .other(contact?.name ?? name), contact: contact)
+        assignSelectedSnippets(to: .other(contact?.name ?? name), contact: contact)
         typedName = ""
     }
 
-    private func assignSelectedUnknowns(to speaker: Speaker, contact: Contact?) {
-        let unknowns = selectedUnknownSpeakers()
-        guard !unknowns.isEmpty else { return }
-        onAssign(unknowns, speaker, contact)
+    private func assignSelectedSnippets(to speaker: Speaker, contact: Contact?) {
+        let ids = unknownSnippets.map(\.id).filter { unknownSelected.contains($0) }
+        guard !ids.isEmpty else { return }
+        onAssign(ids, speaker, contact)
         unknownSelected = []
     }
 

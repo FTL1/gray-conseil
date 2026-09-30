@@ -75,6 +75,17 @@ struct TranscriptPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Transcript")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .delayedHelp(.paneTranscript)
+            .accessibilityLabel("Transcript pane")
+
             SpeakerRosterBar(
                 roster: speakerRoster,
                 segments: sortedSegments,
@@ -191,7 +202,7 @@ struct TranscriptPanelView: View {
             if let speaker = menuSpeaker {
                 SpeakerActionPopover(
                     speaker: speaker,
-                    actions: speakerActions(for: speaker),
+                    actions: speakerActions(for: speaker, anchorID: menuAnchorID),
                     onBeginInlineRename: {
                         menuSpeaker = nil
                     },
@@ -275,8 +286,11 @@ struct TranscriptPanelView: View {
                 onRun: { expected in
                     recoverSpeakersFromAudio(expected: expected)
                 },
-                onAssign: { unknowns, target, contact in
-                    assignUnknowns(unknowns, to: target, contact: contact)
+                onAssign: { ids, target, contact in
+                    assignUnknownSegments(ids, to: target, contact: contact)
+                },
+                onAttach: { id, direction in
+                    attachUnmatched(id, to: direction)
                 },
                 onDismiss: {
                     showReanalyzeSheet = false
@@ -786,9 +800,7 @@ struct TranscriptPanelView: View {
                     } : nil,
                     onSeekToTime: onSeekToTime,
                     onPlayAudio: {
-                        let nextStart = sortedSegments.drop(while: { $0.id != segment.id }).dropFirst().first?.startTime
-                        SegmentAudioPlayer.shared.toggle(segment, in: meeting, until: nextStart)
-                        speakerRevision += 1
+                        playSnippet(segment)
                     },
                     isPlayingAudio: SegmentAudioPlayer.shared.playingSegmentID == segment.id,
                     playbackFailure: {
@@ -829,7 +841,7 @@ struct TranscriptPanelView: View {
         )
     }
 
-    private func applySpeakerLink(_ person: SpeakerLinkPerson, to speaker: Speaker) {
+    private func applySpeakerLink(_ person: SpeakerLinkPerson, to speaker: Speaker, lineID: UUID? = nil) {
         let newSpeaker = person.asSpeaker()
         if let contactID = person.contactID,
            let contact = contacts.first(where: { $0.id == contactID }) {
@@ -840,12 +852,24 @@ struct TranscriptPanelView: View {
                 meeting.attendees.append(contact)
             }
         }
-        if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-            changeSpeakerForAll(from: representative, to: newSpeaker)
-        } else {
-            applyRenameFromMenu(current: speaker, to: newSpeaker, anchorID: menuAnchorID)
-        }
+        applyLineOrVoice(
+            current: speaker,
+            to: newSpeaker,
+            lineID: lineID ?? menuAnchorID
+        )
         menuSpeaker = newSpeaker
+    }
+
+    /// A snippet menu retags that line. People chips at the top of this pane
+    /// retag every line of that voice.
+    private func applyLineOrVoice(current: Speaker, to newSpeaker: Speaker, lineID: UUID?) {
+        if let lineID, let segment = meeting.segments.first(where: { $0.id == lineID }) {
+            changeSpeakerOne(from: segment, to: newSpeaker)
+            return
+        }
+        if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(current) }) {
+            changeSpeakerForAll(from: representative, to: newSpeaker)
+        }
     }
 
     private func voicePrintState(for speaker: Speaker) -> VoicePrintUIState {
@@ -1213,7 +1237,7 @@ struct TranscriptPanelView: View {
             },
             speakerLinks: speakerLinkGroups(for: speaker),
             onSelectSpeakerLink: { person in
-                applySpeakerLink(person, to: speaker)
+                applySpeakerLink(person, to: speaker, lineID: anchorID)
             },
             onEnrollVoicePrint: {
                 enrollVoicePrint(for: speaker)
@@ -1228,9 +1252,11 @@ struct TranscriptPanelView: View {
             isRecoveringSpeakers: isRecoveringSpeakers,
             onSetAsMe: {
                 let me = Speaker.resolvedMe()
-                if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-                    changeSpeakerForAll(from: representative, to: me)
-                }
+                applyLineOrVoice(
+                    current: speaker,
+                    to: me,
+                    lineID: anchorID ?? menuAnchorID
+                )
                 menuSpeaker = me
             }
         )
@@ -1505,6 +1531,41 @@ struct TranscriptPanelView: View {
         }
     }
 
+    private func playSnippet(_ segment: TranscriptSegment) {
+        let index = sortedSegments.firstIndex(where: { $0.id == segment.id })
+        let nextStart = index.flatMap { idx -> TimeInterval? in
+            let next = idx + 1
+            return next < sortedSegments.count ? sortedSegments[next].startTime : nil
+        }
+        let previousEnd = index.flatMap { idx -> TimeInterval? in
+            idx > 0 ? sortedSegments[idx - 1].endTime : nil
+        }
+        SegmentAudioPlayer.shared.toggle(
+            segment,
+            in: meeting,
+            until: nextStart,
+            previousEnd: previousEnd
+        )
+        speakerRevision += 1
+    }
+
+    private func changeSpeakerOne(from segment: TranscriptSegment, to newSpeaker: Speaker) {
+        let canonical = speakerRoster.canonicalSpeaker(matching: newSpeaker) ?? newSpeaker
+        speakerUndo.capture(meeting.segments)
+        if !segment.isEdited {
+            segment.originalText = segment.text
+            segment.originalSpeakerData = segment.speakerData
+        }
+        let old = segment.speaker
+        segment.speaker = canonical
+        segment.isEdited = true
+        refreshSegments()
+        saveEdit(site: "changeSpeakerOne")
+        TransientActivityCoordinator.shared.flash(
+            "This line is now \(canonical.displayName). Other \(old.displayName) lines are unchanged. Right-click a People chip to retag every line of a voice."
+        )
+    }
+
     private func changeSpeakerForAll(from segment: TranscriptSegment, to newSpeaker: Speaker) {
         let currentSpeaker = segment.speaker
         let canonical = speakerRoster.canonicalSpeaker(matching: newSpeaker) ?? newSpeaker
@@ -1658,11 +1719,65 @@ struct TranscriptPanelView: View {
         }
     }
 
-    private func assignUnknowns(_ speakers: [Speaker], to newSpeaker: Speaker, contact: Contact?) {
+    private func assignUnknownSegments(_ ids: [UUID], to newSpeaker: Speaker, contact: Contact?) {
+        let idSet = Set(ids)
+        let speakers = meeting.segments.filter { idSet.contains($0.id) }.map(\.speaker)
+        guard !speakers.isEmpty else { return }
+        assignUnknowns(speakers, to: newSpeaker, contact: contact, onlyIDs: idSet)
+    }
+
+    private func attachUnmatched(_ id: UUID, to direction: MashupAttachDirection) {
+        let sorted = sortedSegments
+        guard let index = sorted.firstIndex(where: { $0.id == id }) else { return }
+        let extra = sorted[index]
+        let neighbor: TranscriptSegment
+        switch direction {
+        case .previous:
+            guard index > 0 else { return }
+            neighbor = sorted[index - 1]
+        case .next:
+            guard index + 1 < sorted.count else { return }
+            neighbor = sorted[index + 1]
+        }
+        speakerUndo.capture(meeting.segments)
+        if !neighbor.isEdited {
+            neighbor.originalText = neighbor.text
+            neighbor.originalSpeakerData = neighbor.speakerData
+        }
+        let ordered = [neighbor, extra].sorted { $0.startTime < $1.startTime }
+        neighbor.text = TranscriptAutoMerge.joinTexts(ordered.map(\.text))
+        neighbor.startTime = ordered.first!.startTime
+        let followingStart = sorted.drop(while: { $0.id != ordered.last!.id }).dropFirst().first?.startTime
+        neighbor.endTime = TranscriptAutoMerge.coveredEnd(of: ordered, followingStart: followingStart)
+        neighbor.isEdited = true
+        meeting.segments.removeAll { $0.id == extra.id }
+        modelContext.delete(extra)
+        if var current = reanalyzeResult {
+            let remaining = meeting.segments.contains { $0.speaker.matchesIdentity(extra.speaker) }
+            if !remaining {
+                current.unknownSpeakers.removeAll { $0.matchesIdentity(extra.speaker) }
+            }
+            reanalyzeResult = current
+        }
+        refreshSegments()
+        saveEdit(site: "attachUnmatched")
+        TransientActivityCoordinator.shared.flash(
+            "Appended that line onto \(neighbor.speaker.displayName)."
+        )
+    }
+
+    private func assignUnknowns(
+        _ speakers: [Speaker],
+        to newSpeaker: Speaker,
+        contact: Contact?,
+        onlyIDs: Set<UUID>? = nil
+    ) {
         guard !speakers.isEmpty else { return }
         speakerUndo.capture(meeting.segments)
         var count = 0
-        for segment in meeting.segments where speakers.contains(where: { $0.matchesIdentity(segment.speaker) }) {
+        for segment in meeting.segments
+        where (onlyIDs?.contains(segment.id) ?? true)
+            && speakers.contains(where: { $0.matchesIdentity(segment.speaker) }) {
             if !segment.isEdited {
                 segment.originalText = segment.text
                 segment.originalSpeakerData = segment.speakerData
@@ -1672,6 +1787,8 @@ struct TranscriptPanelView: View {
             count += 1
         }
         for speaker in speakers {
+            let remaining = meeting.segments.contains { $0.speaker.matchesIdentity(speaker) }
+            if remaining { continue }
             retargetSpeaker(from: speaker, to: newSpeaker, mergeIntoExisting: speakerRoster.seat(matching: newSpeaker) != nil)
         }
 
@@ -1696,7 +1813,7 @@ struct TranscriptPanelView: View {
                 rememberAlias(speaker.displayName, on: resolvedContact)
             }
             if let embeddings = reanalyzeResult?.embeddings {
-                for speaker in speakers {
+                for speaker in speakers where !speaker.isTalkOver && !speaker.isGuestPlaceholder {
                     if let embedding = embeddings[speaker.identityKey], embedding.count >= 8 {
                         VoicePrintIsolation.isolate(embedding, owner: resolvedContact, among: Array(contacts))
                         resolvedContact.addVoicePrint(
@@ -1733,12 +1850,12 @@ struct TranscriptPanelView: View {
         saveEdit(site: "assignUnknowns")
         if var current = reanalyzeResult {
             current.unknownSpeakers.removeAll { leftover in
-                speakers.contains { $0.matchesIdentity(leftover) }
+                !meeting.segments.contains { $0.speaker.matchesIdentity(leftover) }
             }
             reanalyzeResult = current
         }
         TransientActivityCoordinator.shared.flash(
-            "Assigned \(count) line\(count == 1 ? "" : "s") to \(newSpeaker.displayName) and saved a voice stamp."
+            "Assigned \(count) line\(count == 1 ? "" : "s") to \(newSpeaker.displayName)."
         )
         DevLog.ui(
             "assigned unknowns → \(newSpeaker.displayName)",

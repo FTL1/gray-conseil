@@ -328,38 +328,98 @@ final class VoicePrintTests: XCTestCase {
         XCTAssertEqual(hit?.item, "wet")
     }
 
-    func testDualTrackOverlapLabelsUnknownAsTalkOver() {
+    func testDualTrackMicOnlyIsMe() {
         let mic = [Float](repeating: 0.2, count: 16_000)
-        let system = [Float](repeating: 0.02, count: 16_000)
+        let system = [Float](repeating: 0.001, count: 16_000)
         let assigned = DualTrackOverlap.resolve(
             proposed: .other("speaker-1"),
             start: 0,
             end: 1,
             offset: 0,
             mic: mic,
-            system: system
+            system: system,
+            me: .me
         )
-        XCTAssertTrue(assigned.isTalkOver)
-        XCTAssertEqual(assigned.displayName, Speaker.talkOverDisplayName)
-        let named = DualTrackOverlap.resolve(
-            proposed: .other("Pat"),
-            start: 0,
-            end: 1,
-            offset: 0,
-            mic: mic,
-            system: system
-        )
-        XCTAssertEqual(named.displayName, "Pat")
-        let quietSystem = [Float](repeating: 0.001, count: 16_000)
+        XCTAssertTrue(assigned.isMe)
+    }
+
+    func testDualTrackSystemOnlyNeverMe() {
+        let mic = [Float](repeating: 0.001, count: 16_000)
+        let system = [Float](repeating: 0.2, count: 16_000)
         let leftover = DualTrackOverlap.resolve(
-            proposed: .other("speaker-1"),
+            proposed: .other("speaker-2"),
             start: 0,
             end: 1,
             offset: 0,
             mic: mic,
-            system: quietSystem
+            system: system,
+            remotes: [.other("Josh")]
         )
-        XCTAssertEqual(leftover.displayName, "speaker-1")
+        XCTAssertEqual(leftover.displayName, "speaker-2")
+        let unseated = DualTrackOverlap.resolve(
+            proposed: .me,
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            remotes: [.other("Josh")]
+        )
+        XCTAssertEqual(unseated.displayName, "Josh")
+        XCTAssertFalse(unseated.isMe)
+    }
+
+    func testDualTrackBothSimilarIsTalkOver() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0.2, count: 16_000)
+        let leftover = DualTrackOverlap.resolve(
+            proposed: .other("speaker-2"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system
+        )
+        XCTAssertTrue(leftover.isTalkOver)
+        let named = DualTrackOverlap.resolve(
+            proposed: .other("Josh"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system
+        )
+        XCTAssertTrue(named.isTalkOver)
+    }
+
+    func testDualTrackMicDominantIsMe() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0.02, count: 16_000)
+        let assigned = DualTrackOverlap.resolve(
+            proposed: .other("Josh"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me
+        )
+        XCTAssertTrue(assigned.isMe)
+    }
+
+    func testClassifyReverbOnLouderSystemIsRemote() {
+        XCTAssertEqual(
+            DualTrackOverlap.classify(micRMS: 0.05, sysRMS: 0.08, systemReverb: 0.5),
+            .remote
+        )
+        XCTAssertEqual(
+            DualTrackOverlap.classify(micRMS: 0.2, sysRMS: 0.2, systemReverb: 0),
+            .talkOver
+        )
+        XCTAssertEqual(
+            DualTrackOverlap.classify(micRMS: 0.2, sysRMS: 0.001, systemReverb: 0),
+            .me
+        )
     }
 
     func testPlaceholderNames() {

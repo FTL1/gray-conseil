@@ -268,6 +268,18 @@ enum AcousticFootprint {
         return (sum / Float(samples.count)).squareRoot()
     }
 
+    /// Mean envelope correlation at 100 ms and 200 ms. Far-end rooms and
+    /// cheap mics stay high; a dry local headset does not.
+    static func lateReverb(_ samples: [Float], sampleRate: Float = 16_000) -> Float {
+        guard samples.count >= minSamples else { return 0 }
+        let frame = max(80, Int(sampleRate * 0.025))
+        let hop = max(40, Int(sampleRate * 0.010))
+        let energies = frameEnergies(samples, frame: frame, hop: hop)
+        let corr100 = lagCorr(energies, lag: max(1, Int(0.100 * sampleRate / Float(hop))))
+        let corr200 = lagCorr(energies, lag: max(1, Int(0.200 * sampleRate / Float(hop))))
+        return max(0, (corr100 + corr200) / 2)
+    }
+
     private static func bandEnergies(_ samples: [Float], sampleRate: Float) -> [Float] {
         let cuts: [Float] = [250, 500, 1_000, 2_000, 4_000, 6_000, 8_000]
         var prev = samples
@@ -455,10 +467,38 @@ enum OverlapMashup {
     }
 }
 
-/// When both recorded tracks have speech, a leftover unknown is overlap,
-/// not a third person.
+/// Where the sound came from beats the voice model: local mic is you,
+/// system audio is everyone else, both at once is Talk-over.
 enum DualTrackOverlap {
     static let speechRMS: Float = 0.012
+    /// One track must be this many times louder to own the line.
+    static let dominance: Float = 3
+    /// Far-end rooms sit above this on system-track late reverb.
+    static let reverbFloor: Float = 0.40
+
+    enum Kind: Equatable, Sendable {
+        case me
+        case remote
+        case talkOver
+    }
+
+    static func classify(
+        micRMS: Float,
+        sysRMS: Float,
+        systemReverb: Float = 0
+    ) -> Kind? {
+        let micHot = micRMS >= speechRMS
+        let sysHot = sysRMS >= speechRMS
+        if !micHot && !sysHot { return nil }
+        if micHot && !sysHot { return .me }
+        if sysHot && !micHot { return .remote }
+        if systemReverb >= reverbFloor, micRMS < sysRMS {
+            return .remote
+        }
+        if micRMS >= sysRMS * dominance { return .me }
+        if sysRMS >= micRMS * dominance { return .remote }
+        return .talkOver
+    }
 
     static func resolve(
         proposed: Speaker,
@@ -467,17 +507,35 @@ enum DualTrackOverlap {
         offset: TimeInterval,
         mic: [Float],
         system: [Float],
-        sampleRate: Float = 16_000
+        sampleRate: Float = 16_000,
+        me: Speaker = .me,
+        remotes: [Speaker] = []
     ) -> Speaker {
-        guard proposed.isUnknownPlaceholder || proposed.isGuestPlaceholder else {
-            return proposed
-        }
         let micRMS = sliceRMS(mic, start: start, end: end, offset: offset, sampleRate: sampleRate)
         let sysRMS = sliceRMS(system, start: start, end: end, offset: offset, sampleRate: sampleRate)
-        let micHot = micRMS >= speechRMS
-        let sysHot = sysRMS >= speechRMS
-        guard micHot && sysHot else { return proposed }
-        return .talkOver
+        let sysSlice = AcousticFootprint.slice(
+            system,
+            start: start - offset,
+            end: end - offset,
+            sampleRate: sampleRate
+        )
+        let reverb = AcousticFootprint.lateReverb(sysSlice, sampleRate: sampleRate)
+        guard let kind = classify(micRMS: micRMS, sysRMS: sysRMS, systemReverb: reverb) else {
+            return proposed
+        }
+        switch kind {
+        case .me:
+            return me
+        case .talkOver:
+            return .talkOver
+        case .remote:
+            if proposed.isMe || proposed.isTalkOver {
+                return remotes.count == 1
+                    ? remotes[0]
+                    : .other(Speaker.placeholderLabel(index: 1))
+            }
+            return proposed
+        }
     }
 
     static func sliceRMS(

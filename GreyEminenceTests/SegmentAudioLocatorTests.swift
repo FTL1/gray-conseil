@@ -62,7 +62,7 @@ final class SegmentAudioLocatorTests: XCTestCase {
             nextStart: 12
         )
         XCTAssertEqual(window.lowerBound, 10 - SegmentAudioLocator.padding, accuracy: 0.001)
-        XCTAssertEqual(window.upperBound, 12 + SegmentAudioLocator.padding, accuracy: 0.001)
+        XCTAssertEqual(window.upperBound, 12, accuracy: 0.001)
     }
 
     func testWindowNeverStartsBeforeZeroAndNeverCollapses() {
@@ -72,6 +72,16 @@ final class SegmentAudioLocatorTests: XCTestCase {
         // An end before its start (a mangled segment) still plays something.
         let inverted = SegmentAudioLocator.window(segmentStart: 30, segmentEnd: 20, offset: 0)
         XCTAssertGreaterThan(inverted.upperBound, inverted.lowerBound)
+    }
+
+    func testWindowDoesNotBleedIntoThePreviousSnippet() {
+        let window = SegmentAudioLocator.window(
+            segmentStart: 10,
+            segmentEnd: 12,
+            offset: 0,
+            previousEnd: 10
+        )
+        XCTAssertEqual(window.lowerBound, 10, accuracy: 0.001)
     }
 
     @MainActor

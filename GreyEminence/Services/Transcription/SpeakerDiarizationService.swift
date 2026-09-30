@@ -657,6 +657,8 @@ enum MeetingSpeakerRecovery {
         }
         guard !ranges.isEmpty else { throw RecoveryError.noDiarizedSpeech }
 
+        let me = expected.first(where: \.isMe)?.speaker ?? Speaker.resolvedMe()
+        let remotes = expected.filter { !$0.isMe }.map(\.speaker)
         var changed = 0
         var used: [Speaker] = []
         for segment in meeting.segments {
@@ -671,7 +673,9 @@ enum MeetingSpeakerRecovery {
                 end: segment.endTime,
                 offset: offset,
                 mic: micSamples,
-                system: samples
+                system: samples,
+                me: me,
+                remotes: remotes
             )
             if !used.contains(where: { $0.matchesIdentity(speaker) }) {
                 used.append(speaker)

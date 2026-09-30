@@ -465,7 +465,7 @@ struct SpeakerActionPopover: View {
             Text("Set as")
         }
         .controlSize(.small)
-        .help("Assign this voice to you, a speaker in this meeting, or a contact. The rename field updates to match.")
+        .delayedHelp(.snippetSetAs)
     }
 
     private func applySetAs(_ person: SpeakerLinkPerson) {

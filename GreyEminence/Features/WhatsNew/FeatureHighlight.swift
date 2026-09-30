@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "snippet-me-from-mic-talkover",
+            version: "0.28.4-public.8",
+            title: "This line only, and Me is the microphone",
+            summary: "Set as on a transcript line retags that line. People chips retag the whole voice. Re-analyze lists every unmatched snippet with play, Me first, and append-to-previous/next. Local mic is you; overlapping talk is Talk-over.",
+            systemImage: "mic.fill",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "talk-over-overlap-seat",
             version: "0.28.4-public.7",
             title: "Overlapping talk is Talk-over",

@@ -61,7 +61,8 @@ enum SegmentAudioLocator {
         segmentStart: TimeInterval,
         segmentEnd: TimeInterval,
         offset: TimeInterval,
-        nextStart: TimeInterval? = nil
+        nextStart: TimeInterval? = nil,
+        previousEnd: TimeInterval? = nil
     ) -> ClosedRange<TimeInterval> {
         var end = max(segmentEnd, segmentStart)
         if let nextStart, nextStart > segmentStart {
@@ -69,9 +70,17 @@ enum SegmentAudioLocator {
             // stops at the following snippet so play matches the text.
             end = min(end == segmentStart ? nextStart : end, nextStart)
         }
-        let lower = max(0, offset + segmentStart - padding)
-        let naturalEnd = offset + end + padding
-        let upper = max(lower + minimumDuration, naturalEnd)
+        var lower = max(0, offset + segmentStart - padding)
+        if let previousEnd {
+            lower = max(lower, offset + previousEnd)
+        }
+        var upper = max(lower + minimumDuration, offset + end + padding)
+        if let nextStart, nextStart > segmentStart {
+            upper = min(upper, offset + nextStart)
+        }
+        if upper <= lower {
+            upper = lower + minimumDuration
+        }
         return lower...upper
     }
 }

@@ -137,7 +137,7 @@ This was the original reason for the fork (Matt’s issues #3 and #4).
 - **Right-click** a badge: this meeting / prior speakers, enroll voice print, rename, search, hide, show only, link a contact.
 - **Hide includes the first snippet** (Alex at 0:00, first guest-1, first guest-2). **Click to show** on a hide stub reveals that person.
 - **Enroll voice print** stores the voice on a People contact so the next meeting can tag a match instead of minting guest-2.
-- **Re-analyze speakers** (⋯ menu): tick who was on the call, match voice stamps, leftovers become Talk-over or speaker-1…. You stay you.
+- **Re-analyze speakers** (⋯ menu): tick who was on the call, match voice stamps, leftover snippets can be played, assigned (Me first), or appended to the previous/next line.
 - **Transcript** and Meeting Intelligence **Export** use `Title_yyyyMMdd-47m-tr.ext` / `Title_yyyyMMdd-47m-intel.ext`.
 - If an old recording lumped everyone together, right-click → **Recover guest-1, guest-2… from audio**.
 

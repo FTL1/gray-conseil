@@ -80,19 +80,21 @@ final class SegmentAudioPlayer {
     func toggle(
         _ segment: TranscriptSegment,
         in meeting: Meeting,
-        until nextStart: TimeInterval? = nil
+        until nextStart: TimeInterval? = nil,
+        previousEnd: TimeInterval? = nil
     ) {
         if playingSegmentID == segment.id {
             stop()
         } else {
-            play(segment, in: meeting, until: nextStart)
+            play(segment, in: meeting, until: nextStart, previousEnd: previousEnd)
         }
     }
 
     func play(
         _ segment: TranscriptSegment,
         in meeting: Meeting,
-        until nextStart: TimeInterval? = nil
+        until nextStart: TimeInterval? = nil,
+        previousEnd: TimeInterval? = nil
     ) {
         stop()
         failure = nil
@@ -105,7 +107,8 @@ final class SegmentAudioPlayer {
             segmentStart: segment.startTime,
             segmentEnd: segment.endTime,
             offset: meeting.audioStartOffset,
-            nextStart: nextStart
+            nextStart: nextStart,
+            previousEnd: previousEnd
         )
         let sources = Self.sources(for: track, isMe: segment.speaker.isMe)
         let storage = StorageManager.shared

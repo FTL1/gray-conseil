@@ -200,7 +200,7 @@ struct ContentView: View {
                     Button {
                         showInspector.toggle()
                     } label: {
-                        Label("Toggle Insights", systemImage: "sidebar.right")
+                        Label("Toggle Transcript", systemImage: "sidebar.right")
                     }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
                     .helpTip(.toolbarInspector)
@@ -682,6 +682,8 @@ struct ContentView: View {
                     onExtract: { extractLaunch = $0 }
                 )
                     .navigationSplitViewColumnWidth(min: 280, ideal: 300)
+                    .accessibilityLabel("Meeting list")
+                    .delayedHelp(.paneMeetingList)
             } detail: {
                 if let meeting = selectedMeeting {
                     GeometryReader { geo in
@@ -708,6 +710,7 @@ struct ContentView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .layoutPriority(2)
+                            .accessibilityLabel("Meeting notes")
                             if showInspector {
                                 inspectorDragHandle(containerWidth: geo.size.width)
                                 TranscriptPanelView(
@@ -720,6 +723,7 @@ struct ContentView: View {
                                 )
                                 .frame(width: clampedWidth)
                                 .layoutPriority(0)
+                                .accessibilityLabel("Transcript")
                             }
                         }
                     }
@@ -760,6 +764,7 @@ struct ContentView: View {
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .layoutPriority(2)
+                            .accessibilityLabel("Meeting notes")
                             if showInspector {
                                 inspectorDragHandle(containerWidth: geo.size.width)
                                 TranscriptPanelView(
@@ -772,6 +777,7 @@ struct ContentView: View {
                                 )
                                 .frame(width: clampedWidth)
                                 .layoutPriority(0)
+                                .accessibilityLabel("Transcript")
                             }
                         }
                     }
@@ -828,6 +834,7 @@ struct ContentView: View {
                             RecordingInspectorPanel(viewModel: recordingViewModel)
                                 .frame(width: clampedWidth)
                                 .layoutPriority(0)
+                                .accessibilityLabel("Transcript")
                         }
                     }
                 }

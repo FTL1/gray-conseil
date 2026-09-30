@@ -181,7 +181,7 @@ struct EditableTranscriptSegmentRow: View {
         )
         .popover(isPresented: $showContactPicker) {
             ContactPicker(excludedContacts: []) { contact in
-                changeSpeakerForAll(to: .other(contact.name))
+                changeSpeaker(to: .other(contact.name))
                 showContactPicker = false
             }
         }
@@ -203,7 +203,7 @@ struct EditableTranscriptSegmentRow: View {
             merged.onAddToContacts = { showContactPicker = true }
         }
         if merged.onSetAsMe == nil, !segment.speaker.isMe {
-            merged.onSetAsMe = { changeSpeakerForAll(to: Speaker.resolvedMe()) }
+            merged.onSetAsMe = { changeSpeaker(to: Speaker.resolvedMe()) }
         }
         return merged
     }
