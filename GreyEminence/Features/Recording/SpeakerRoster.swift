@@ -370,8 +370,16 @@ final class SpeakerRoster {
 
     /// Bind `old` onto `new`’s seat and drop `old` from the hide list without
     /// hiding the destination (guest-1 → Jordan must not grey Jordan).
+    /// Me never folds onto a remote seat — tagging one of your lines as
+    /// Josh must not make the Josh chip also mean you.
     func adopt(from old: Speaker, onto new: Speaker, in segments: [TranscriptSegment]) {
         let target = canonicalSpeaker(matching: new) ?? new
+        if old.isMe, !target.isMe {
+            hiddenSpeakers.removeAll { $0.matchesIdentity(old) }
+            unifyOntoSeats(in: segments)
+            bumpMixer()
+            return
+        }
         if let seat = seat(matching: target)
             ?? seats.first(where: { SpeakerNameMatcher.samePerson($0.name, target.displayName) }) {
             bind(detected: old, to: seat.id)

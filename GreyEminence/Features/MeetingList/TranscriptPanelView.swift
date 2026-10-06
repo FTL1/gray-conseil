@@ -1227,8 +1227,10 @@ struct TranscriptPanelView: View {
             onOpenMenu: {
                 DevLog.ui("open-speaker-menu \(speaker.displayName)")
                 menuSpeaker = speaker
+                // Nil means a People-chip / whole-voice menu. Do not fall
+                // back to the first matching line — that made contact and
+                // rename from the chip retag only that one snippet.
                 menuAnchorID = anchorID
-                    ?? sortedSegments.first(where: { $0.speaker.matchesIdentity(speaker) })?.id
             },
             searchMatchCount: isMenuSpeaker ? searchMatchIDs.count : 0,
             searchMatchIndex: isMenuSpeaker ? searchMatchIndex : 0,
@@ -1244,9 +1246,11 @@ struct TranscriptPanelView: View {
                 contact.speakerAliases.append(speaker.displayName)
                 modelContext.insert(contact)
                 PersistenceGate.save(modelContext, site: "saveAsNewContact", critical: false, meetingID: meeting.id)
-                if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-                    changeSpeakerForAll(from: representative, to: .other(contact.name))
-                }
+                applyLineOrVoice(
+                    current: speaker,
+                    to: .other(contact.name),
+                    lineID: anchorID
+                )
                 DevLog.ui("save-as-new-contact \(contact.name)")
             },
             speakerLinks: speakerLinkGroups(for: speaker),
@@ -1300,11 +1304,11 @@ struct TranscriptPanelView: View {
             requestAssignVisible(to: newSpeaker)
             return
         }
-        let targetID = menuAnchorID ?? anchorID
+        // One snippet: retag that line only. Do not run the bulk adopt path,
+        // which used to bind Me onto the remote seat.
+        let targetID = anchorID ?? menuAnchorID
         if let targetID, let segment = meeting.segments.first(where: { $0.id == targetID }) {
-            selectedSegmentIDs = [segment.id]
-            reassignSelectedSegments(to: newSpeaker)
-            selectedSegmentIDs = []
+            changeSpeakerOne(from: segment, to: newSpeaker)
             return
         }
         if let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(current) }) {

@@ -382,7 +382,9 @@ struct EditableTranscriptSegmentRow: View {
             return
         }
 
-        let newSpeaker = Speaker.renamed(from: segment.speaker, displayName: trimmed)
+        let newSpeaker = applyToAll
+            ? Speaker.renamed(from: segment.speaker, displayName: trimmed)
+            : Speaker.assigned(from: segment.speaker, displayName: trimmed)
 
         if applyToAll {
             changeSpeakerForAll(to: newSpeaker)

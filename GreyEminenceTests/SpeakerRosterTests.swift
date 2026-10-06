@@ -275,6 +275,34 @@ final class SpeakerRosterTests: XCTestCase {
         XCTAssertEqual(roster.speakerToApply(.other("Robert")).displayName, "Robert")
     }
 
+    func testAdoptDoesNotBindMeOntoARemote() throws {
+        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+        defer { SpeakerNames.resetSession() }
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
+        let mine = TranscriptSegment(
+            speaker: .meNamed("Clay"),
+            text: "hi",
+            startTime: 0,
+            endTime: 1,
+            isFinal: true
+        )
+        let other = TranscriptSegment(
+            speaker: .meNamed("Clay"),
+            text: "yo",
+            startTime: 1,
+            endTime: 2,
+            isFinal: true
+        )
+        mine.speaker = roster.speakerToApply(.other("Josh"))
+        roster.adopt(from: .meNamed("Clay"), onto: .other("Josh"), in: [mine, other])
+        let josh = try XCTUnwrap(roster.seats.first { $0.name == "Josh" })
+        XCTAssertFalse(josh.boundSpeakers.contains(where: \.isMe))
+        XCTAssertTrue(other.speaker.isMe)
+        XCTAssertEqual(mine.speaker.displayName, "Josh")
+        XCTAssertFalse(mine.speaker.isMe)
+    }
+
     func testUnifyDoesNotRevertAMeLineAssignedToJosh() {
         SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
         defer { SpeakerNames.resetSession() }
