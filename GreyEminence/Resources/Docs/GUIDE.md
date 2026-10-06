@@ -272,7 +272,7 @@ Unassigned leftover voices (**Talk-over**, speaker-1, guest-1) stay on so you ca
 
 **Colors:** right-click a name → pick a swatch → **Lock this color**. Alex, Jordan, and Sam keep those colors in later meetings. If two people would share a color, the more common one keeps it.
 
-If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call. The local microphone is you; overlapping talk is **Talk-over**. Unmatched snippets are listed so you can play them, assign them (Me is first), or append them onto the previous or next line. Undo and revert are in **⋯**.
+If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call. Leftover lines use the microphone (you) vs system audio (remote) vs both (**Talk-over**); a name you already assigned stays. Unmatched snippets are listed so you can play them, assign them (Me is first), or append them onto the previous or next line. Play on a line runs at normal speed. Undo and revert are in **⋯**.
 
 ### Right-click a speaker name
 

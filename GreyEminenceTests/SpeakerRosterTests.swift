@@ -262,6 +262,38 @@ final class SpeakerRosterTests: XCTestCase {
         XCTAssertEqual(items.compactMap { if case .segment(let s) = $0 { return s.text }; return nil }, ["native", "g1"])
     }
 
+    func testSpeakerToApplyNeverFoldsARemoteOntoMe() {
+        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+        defer { SpeakerNames.resetSession() }
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
+        XCTAssertFalse(roster.speakerToApply(.other("Josh")).isMe)
+        XCTAssertEqual(roster.speakerToApply(.other("Josh")).displayName, "Josh")
+        XCTAssertTrue(roster.speakerToApply(.me).isMe)
+        XCTAssertTrue(roster.speakerToApply(.meNamed("Clay")).isMe)
+        XCTAssertFalse(roster.speakerToApply(.other("Robert")).isMe)
+        XCTAssertEqual(roster.speakerToApply(.other("Robert")).displayName, "Robert")
+    }
+
+    func testUnifyDoesNotRevertAMeLineAssignedToJosh() {
+        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+        defer { SpeakerNames.resetSession() }
+        let roster = SpeakerRoster()
+        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
+        let line = TranscriptSegment(
+            speaker: .meNamed("Clay"),
+            text: "hi",
+            startTime: 0,
+            endTime: 1,
+            isFinal: true
+        )
+        line.speaker = roster.speakerToApply(.other("Josh"))
+        roster.bindNamedVoices(in: [line])
+        _ = roster.unifyOntoSeats(in: [line])
+        XCTAssertFalse(line.speaker.isMe)
+        XCTAssertEqual(line.speaker.displayName, "Josh")
+    }
+
     func testMixerGenerationBumpsOnHideShowAndIsolate() {
         let roster = SpeakerRoster()
         XCTAssertEqual(roster.mixerGeneration, 0)

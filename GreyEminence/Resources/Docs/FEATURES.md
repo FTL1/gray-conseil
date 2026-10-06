@@ -137,7 +137,7 @@ Instead of only “Link Contact…” opening a generic directory:
 
 Captures this voice from **this meeting’s audio** (mic and system, whichever is louder on those lines) and appends it to that person’s collection. Re-analyze and later recordings match against every stamp, not a single averaged vector.
 
-The voice model (WeSpeaker) tries to ignore the room. **Include room and mic character** (on by default) also stores reverb, hiss, and the far-end mic. Re-analyze treats the local microphone as you, hollow/system audio as remote, and both-at-once as **Talk-over**. Set as on a transcript line changes that line only; People chips retag the whole voice.
+The voice model (WeSpeaker) tries to ignore the room. **Include room and mic character** (on by default) also stores reverb, hiss, and the far-end mic. Re-analyze uses the microphone to name leftover lines: local mic is you, hollow/system audio is remote, both-at-once is **Talk-over**. A name already on the line is not overwritten just because the mic also heard them. Set as on a transcript line changes that line only; People chips retag the whole voice. Snippet play uses the recording’s own time base so it runs at normal speed.
 
 - **Set as** (dropdown) or a name under **Speakers** fills Rename and assigns this voice, including lines that were labeled as you.
 - You cannot enroll a nameless `guest-N`. Pick the person first.

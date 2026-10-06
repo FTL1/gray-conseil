@@ -600,8 +600,9 @@ enum MeetingSpeakerRecovery {
 
     /// Relabel transcript lines from system audio. Seeded stamps (the full
     /// collection per person, including in-session captures) are matched
-    /// first; leftovers become Talk-over or speaker-N. Lines currently labeled
-    /// Me are included so a remote voice that was stamped as you can be corrected.
+    /// first; leftovers become Talk-over or speaker-N. Named remotes stay
+    /// named when the mic also heard them. Lines currently labeled Me are
+    /// included so a remote voice that was stamped as you can be corrected.
     @MainActor
     static func recover(
         meeting: Meeting,
@@ -659,6 +660,7 @@ enum MeetingSpeakerRecovery {
 
         let me = expected.first(where: \.isMe)?.speaker ?? Speaker.resolvedMe()
         let remotes = expected.filter { !$0.isMe }.map(\.speaker)
+        let systemHasSpeech = DualTrackOverlap.trackHasSpeech(samples)
         var changed = 0
         var used: [Speaker] = []
         for segment in meeting.segments {
@@ -675,7 +677,8 @@ enum MeetingSpeakerRecovery {
                 mic: micSamples,
                 system: samples,
                 me: me,
-                remotes: remotes
+                remotes: remotes,
+                systemHasSpeech: systemHasSpeech
             )
             if !used.contains(where: { $0.matchesIdentity(speaker) }) {
                 used.append(speaker)

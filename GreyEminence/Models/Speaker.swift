@@ -211,6 +211,16 @@ enum Speaker: Codable, Hashable, Sendable {
         return .other(trimmed)
     }
 
+    /// Identity for one transcript line. Unlike `renamed`, a Me line
+    /// tagged as Robert becomes a remote Robert — it does not stay Me
+    /// under a new display name.
+    static func assigned(from original: Speaker, displayName: String) -> Speaker {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return original }
+        if trimmed.lowercased() == "me" { return .me }
+        return .other(trimmed)
+    }
+
 }
 
 /// Share of meeting talk time for one speaker. Uses segment duration when

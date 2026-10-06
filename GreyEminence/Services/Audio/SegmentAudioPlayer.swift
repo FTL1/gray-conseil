@@ -1,8 +1,4 @@
-// `@preconcurrency`: CI's older SDK does not mark `AVAssetTrack` Sendable, so
-// `loadTracks(withMediaType:)` awaited from the nonisolated composition
-// builder fails strict-concurrency checking there while compiling clean
-// locally. Same divergence and same fix as ScreenShareCaptureService.
-@preconcurrency import AVFoundation
+import AVFoundation
 import Foundation
 
 /// Plays the recorded audio behind one transcript segment.
@@ -60,9 +56,10 @@ final class SegmentAudioPlayer {
         didSet { UserDefaults.standard.set(track.rawValue, forKey: Self.trackKey) }
     }
 
-    private var player: AVPlayer?
-    private var endObserver: NSObjectProtocol?
-    private var loadTask: Task<Void, Never>?
+    /// One chain per recorded file (mic, system, or both). AVAudioPlayer
+    /// plays the file at its own sample rate — a composition with the
+    /// video timescale 600 was the 10×-fast path.
+    private var chains: [PlayChain] = []
 
     private init() {
         if !UserDefaults.standard.bool(forKey: Self.trackDefaultedToBothKey) {
@@ -99,8 +96,7 @@ final class SegmentAudioPlayer {
         stop()
         failure = nil
 
-        // Everything the load needs, read off the models here on the main
-        // actor so the asset work below never touches SwiftData.
+        // Read models here on the main actor; AVAudioPlayer never touches SwiftData.
         let segmentID = segment.id
         let sourceMeetingID = meeting.audioSourceMeetingID ?? meeting.id
         let window = SegmentAudioLocator.window(
@@ -118,35 +114,44 @@ final class SegmentAudioPlayer {
                 : storage.systemAudioURL(for: sourceMeetingID))
         }
 
-        playingSegmentID = segmentID
-        loadTask = Task { [weak self] in
-            do {
-                let item = try await Self.makeItem(window: window, bases: bases)
-                guard let self, !Task.isCancelled, self.playingSegmentID == segmentID else { return }
-                self.start(item, segmentID: segmentID)
-            } catch {
-                guard let self, self.playingSegmentID == segmentID else { return }
-                self.playingSegmentID = nil
-                self.failure = (segmentID, error.localizedDescription)
-                LogManager.send(
-                    "Segment playback failed: \(error.localizedDescription)",
-                    category: .audio,
-                    level: .warning,
-                    meetingID: meeting.id
-                )
+        do {
+            playingSegmentID = segmentID
+            var started = false
+            for (_, base) in bases {
+                let chunks = AudioFileWriter.existingChunkURLs(base: base)
+                let slices = SegmentAudioLocator.slices(covering: window, chunks: chunks) {
+                    HighQualityTranscriber.assumedDuration(of: $0, fallback: 10)
+                }.map {
+                    AudioPlaySlice(url: $0.url, localStart: $0.start, duration: $0.duration)
+                }
+                guard !slices.isEmpty else { continue }
+                let chain = PlayChain(remaining: slices)
+                chains.append(chain)
+                try playNext(chain, segmentID: segmentID)
+                started = true
             }
+            guard started else { throw PlaybackError.noAudio }
+        } catch {
+            stop()
+            failure = (segmentID, error.localizedDescription)
+            LogManager.send(
+                "Segment playback failed: \(error.localizedDescription)",
+                category: .audio,
+                level: .warning,
+                meetingID: meeting.id
+            )
         }
     }
 
     func stop() {
-        loadTask?.cancel()
-        loadTask = nil
-        player?.pause()
-        player = nil
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-            self.endObserver = nil
+        for chain in chains {
+            chain.work?.cancel()
+            chain.work = nil
+            chain.player?.stop()
+            chain.player = nil
+            chain.remaining = []
         }
+        chains = []
         playingSegmentID = nil
     }
 
@@ -162,20 +167,40 @@ final class SegmentAudioPlayer {
         }
     }
 
-    private func start(_ item: AVPlayerItem, segmentID: UUID) {
-        let player = AVPlayer(playerItem: item)
-        self.player = player
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+    private func playNext(_ chain: PlayChain, segmentID: UUID) throws {
+        guard let slice = chain.remaining.first else {
+            chain.player?.stop()
+            chain.player = nil
+            if chains.allSatisfy({ $0.remaining.isEmpty && $0.player == nil }) {
+                stop()
+            }
+            return
+        }
+        chain.remaining.removeFirst()
+        let player = try AVAudioPlayer(contentsOf: slice.url)
+        player.enableRate = false
+        player.currentTime = min(slice.localStart, max(0, player.duration - 0.05))
+        let playFor = Self.playDuration(playerDuration: player.duration, slice: slice)
+        guard player.play() else { throw PlaybackError.noAudio }
+        chain.player = player
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
                 guard let self, self.playingSegmentID == segmentID else { return }
-                self.stop()
+                try? self.playNext(chain, segmentID: segmentID)
             }
         }
-        player.play()
+        chain.work = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + playFor, execute: work)
+    }
+
+    /// How long AVAudioPlayer should run this slice. Uses the file's own
+    /// duration so a 1 s window never finishes in 0.1 s.
+    nonisolated static func playDuration(
+        playerDuration: TimeInterval,
+        slice: AudioPlaySlice
+    ) -> TimeInterval {
+        let start = min(slice.localStart, max(0, playerDuration - 0.05))
+        return min(slice.duration, max(0.05, playerDuration - start))
     }
 
     enum PlaybackError: LocalizedError {
@@ -184,44 +209,6 @@ final class SegmentAudioPlayer {
         var errorDescription: String? {
             "No recorded audio on disk for this segment"
         }
-    }
-
-    /// A composition holding the requested tracks' slices, laid end to end
-    /// so a segment that straddles a chunk boundary plays through.
-    private static func makeItem(
-        window: ClosedRange<TimeInterval>,
-        bases: [(Track, URL)]
-    ) async throws -> AVPlayerItem {
-        let composition = AVMutableComposition()
-        var insertedAnything = false
-
-        for (_, base) in bases {
-            let chunks = AudioFileWriter.existingChunkURLs(base: base)
-            let slices = SegmentAudioLocator.slices(covering: window, chunks: chunks) {
-                HighQualityTranscriber.assumedDuration(of: $0, fallback: 10)
-            }
-            guard !slices.isEmpty,
-                  let track = composition.addMutableTrack(
-                    withMediaType: .audio,
-                    preferredTrackID: kCMPersistentTrackID_Invalid
-                  ) else { continue }
-
-            var cursor = CMTime.zero
-            for slice in slices {
-                let asset = AVURLAsset(url: slice.url)
-                guard let assetTrack = try await asset.loadTracks(withMediaType: .audio).first else { continue }
-                let range = CMTimeRange(
-                    start: CMTime(seconds: slice.start, preferredTimescale: 600),
-                    duration: CMTime(seconds: slice.duration, preferredTimescale: 600)
-                )
-                try track.insertTimeRange(range, of: assetTrack, at: cursor)
-                cursor = cursor + range.duration
-                insertedAnything = true
-            }
-        }
-
-        guard insertedAnything else { throw PlaybackError.noAudio }
-        return AVPlayerItem(asset: composition)
     }
 
     /// Walk the recording's chunk files and return the slices covering [from, to).
@@ -252,10 +239,13 @@ final class SegmentAudioPlayer {
         return result
     }
 
-    private static func duration(of url: URL) -> TimeInterval {
-        if let audioFile = try? AVAudioFile(forReading: url) {
-            return Double(audioFile.length) / audioFile.fileFormat.sampleRate
+    private final class PlayChain {
+        var remaining: [AudioPlaySlice]
+        var player: AVAudioPlayer?
+        var work: DispatchWorkItem?
+
+        init(remaining: [AudioPlaySlice]) {
+            self.remaining = remaining
         }
-        return 0
     }
 }

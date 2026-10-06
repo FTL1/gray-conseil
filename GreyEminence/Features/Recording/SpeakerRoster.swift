@@ -349,6 +349,25 @@ final class SpeakerRoster {
         return nil
     }
 
+    /// Speaker to persist when the user picks a person. A remote pick
+    /// (Josh, a contact) never folds onto the Me seat, even when first
+    /// names collide.
+    func speakerToApply(_ requested: Speaker) -> Speaker {
+        if requested.isMe { return Speaker.resolvedMe() }
+        if let seat = seat(matching: requested), !seat.isMe {
+            return seat.speaker
+        }
+        if let seat = seats.first(where: {
+            !$0.isMe && (
+                SpeakerNameMatcher.samePerson($0.name, requested.displayName)
+                    || $0.name.compare(requested.displayName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            )
+        }) {
+            return seat.speaker
+        }
+        return requested
+    }
+
     /// Bind `old` onto `new`’s seat and drop `old` from the hide list without
     /// hiding the destination (guest-1 → Jordan must not grey Jordan).
     func adopt(from old: Speaker, onto new: Speaker, in segments: [TranscriptSegment]) {
@@ -417,12 +436,14 @@ final class SpeakerRoster {
             let canonical = liveSeat(seat).speaker
             if speaker != canonical {
                 if seat.isMe {
-                    var meNames = [seat.name, canonical.displayName]
-                    if let me = SpeakerNames.effectiveMeName { meNames.append(me) }
-                    let namedLikeMe = meNames.contains {
-                        Self.namesAreSamePerson($0, speaker.displayName)
+                    // Exact Me name only. First-token samePerson ("Clay" /
+                    // "Clayton") must not steal a contact the user just assigned.
+                    let meNames = ([seat.name, canonical.displayName, SpeakerNames.effectiveMeName] as [String?])
+                        .compactMap { $0 }
+                    let exactMe = meNames.contains {
+                        $0.compare(speaker.displayName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
                     }
-                    guard speaker.isMe || namedLikeMe else { continue }
+                    guard speaker.isMe || exactMe else { continue }
                 } else if speaker.isMe {
                     continue
                 }

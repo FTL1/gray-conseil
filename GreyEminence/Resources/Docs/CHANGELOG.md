@@ -7,6 +7,10 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.9 — 2026-10-05
+
+**Snippet play at normal speed, named remotes stay named, contact assignment sticks.** Play on a transcript line used the video timescale 600 against AAC, so snippets ran about 10× fast; it now uses the recording’s own time base. Re-analyze no longer stamps every hot-mic line as you — leftover/unnamed lines still follow mic vs system vs both, but Josh stays Josh. Set as / a contact on a line assigns that person even when the line was labeled Me, and renaming one snippet no longer changes who Me is.
+
 ## 0.28.4-public.8 — 2026-09-30
 
 **This line only, Me from the microphone, unmatched snippets you can play.** Set as / Speakers on a transcript line retags that line. People chips at the top of the Transcript pane retag every line of a voice. Re-analyze lists every unmatched snippet with play, Me first in Assign selected to, and append onto the previous or next line. Local-mic energy is you; system/reverb is remote; both is Talk-over. Play no longer bleeds into the next or previous snippet. Panes are named Meeting list, Meeting notes, and Transcript; hover ~2 seconds for the full meaning.

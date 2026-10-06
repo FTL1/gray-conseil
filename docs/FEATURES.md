@@ -139,7 +139,7 @@ Captures this voice from this meeting’s audio and appends it to that person’
 
 - You cannot enroll a nameless `guest-N`. Pick the person first.
 - Saving again adds another stamp. Re-analyze matches the whole collection.
-- Re-analyze treats the local microphone as you, hollow/system audio as remote, and both-at-once as **Talk-over**. Set as on a line changes that line only.
+- Re-analyze uses the microphone to name leftover lines: local mic is you, hollow/system audio is remote, both-at-once is **Talk-over**. A name already on the line (Josh) is not overwritten just because the mic also heard them. Set as on a line changes that line only. Snippet play uses the recording’s own time base so it runs at normal speed.
 
 This is same-person recognition from audio, not a login and not a guarantee across bad call audio.
 

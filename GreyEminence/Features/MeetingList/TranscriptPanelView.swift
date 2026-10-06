@@ -240,12 +240,17 @@ struct TranscriptPanelView: View {
                 prioritizedContacts: meeting.attendees,
                 includeAppleDirectory: true
             ) { contact in
-                if let speaker = contactSpeaker,
-                   let representative = meeting.segments.first(where: { $0.speaker.matchesIdentity(speaker) }) {
-                    if !contact.speakerAliases.contains(speaker.displayName) {
+                if let speaker = contactSpeaker {
+                    if !contact.speakerAliases.contains(where: {
+                        $0.compare(speaker.displayName, options: .caseInsensitive) == .orderedSame
+                    }) {
                         contact.speakerAliases.append(speaker.displayName)
                     }
-                    changeSpeakerForAll(from: representative, to: .other(contact.name))
+                    applyLineOrVoice(
+                        current: speaker,
+                        to: .other(contact.name),
+                        lineID: menuAnchorID
+                    )
                     DevLog.ui("linked \(speaker.displayName) → contact \(contact.name)")
                 }
                 contactSpeaker = nil
@@ -1199,11 +1204,20 @@ struct TranscriptPanelView: View {
             isHidden: TranscriptDisplay.isHidden(speaker, hiddenSpeakers: mixerHiddenSpeakers),
             onToggleHidden: { toggleHidden(speaker) },
             onRename: { name, saveAsDefault in
-                DevLog.ui("rename \(speaker.displayName) → \(name)", detail: "saveAsDefault=\(saveAsDefault)")
-                if speaker.isMe {
-                    SpeakerNames.setSessionMeName(name, saveAsDefault: saveAsDefault)
+                DevLog.ui(
+                    "rename \(speaker.displayName) → \(name)",
+                    detail: "saveAsDefault=\(saveAsDefault) line=\(anchorID != nil)"
+                )
+                let newSpeaker: Speaker
+                if anchorID != nil {
+                    // One snippet: assign identity. Do not rewrite who Me is.
+                    newSpeaker = Speaker.assigned(from: speaker, displayName: name)
+                } else {
+                    if speaker.isMe {
+                        SpeakerNames.setSessionMeName(name, saveAsDefault: saveAsDefault)
+                    }
+                    newSpeaker = Speaker.renamed(from: speaker, displayName: name)
                 }
-                let newSpeaker = Speaker.renamed(from: speaker, displayName: name)
                 applyRenameFromMenu(current: speaker, to: newSpeaker, anchorID: anchorID)
             },
             onSearch: { query in
@@ -1406,10 +1420,11 @@ struct TranscriptPanelView: View {
         let name = bulkSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         let original = meeting.segments.first(where: { selectedSegmentIDs.contains($0.id) })?.speaker ?? .other(name)
-        if original.isMe {
-            SpeakerNames.setSessionMeName(name, saveAsDefault: false)
+        if name.lowercased() == "me" {
+            requestAssignVisible(to: Speaker.resolvedMe())
+        } else {
+            requestAssignVisible(to: Speaker.assigned(from: original, displayName: name))
         }
-        requestAssignVisible(to: Speaker.renamed(from: original, displayName: name))
         showBulkSpeakerRename = false
     }
 
@@ -1456,7 +1471,7 @@ struct TranscriptPanelView: View {
     }
 
     private func reassignSelectedSegments(to speaker: Speaker) {
-        let canonical = speakerRoster.canonicalSpeaker(matching: speaker) ?? speaker
+        let canonical = speakerRoster.speakerToApply(speaker)
         let targets = SpeakerRelabel.assignmentTargets(
             selected: selectedSegmentIDs,
             segments: meeting.segments,
@@ -1550,7 +1565,7 @@ struct TranscriptPanelView: View {
     }
 
     private func changeSpeakerOne(from segment: TranscriptSegment, to newSpeaker: Speaker) {
-        let canonical = speakerRoster.canonicalSpeaker(matching: newSpeaker) ?? newSpeaker
+        let canonical = speakerRoster.speakerToApply(newSpeaker)
         speakerUndo.capture(meeting.segments)
         if !segment.isEdited {
             segment.originalText = segment.text
@@ -1568,7 +1583,7 @@ struct TranscriptPanelView: View {
 
     private func changeSpeakerForAll(from segment: TranscriptSegment, to newSpeaker: Speaker) {
         let currentSpeaker = segment.speaker
-        let canonical = speakerRoster.canonicalSpeaker(matching: newSpeaker) ?? newSpeaker
+        let canonical = speakerRoster.speakerToApply(newSpeaker)
         let merging = speakerRoster.seat(matching: canonical) != nil
             && !currentSpeaker.matchesIdentity(canonical)
         speakerUndo.capture(meeting.segments)

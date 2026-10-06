@@ -57,6 +57,14 @@ final class SpeakerTests: XCTestCase {
         XCTAssertEqual(Speaker.renamed(from: .other("Speaker 1"), displayName: "  "), .other("Speaker 1"))
     }
 
+    func testAssignedUnseatsAMeLine() {
+        XCTAssertEqual(Speaker.assigned(from: .me, displayName: "Robert"), .other("Robert"))
+        XCTAssertEqual(Speaker.assigned(from: .meNamed("Clay"), displayName: "Josh"), .other("Josh"))
+        XCTAssertEqual(Speaker.assigned(from: .me, displayName: "me"), .me)
+        XCTAssertEqual(Speaker.assigned(from: .other("speaker-1"), displayName: "Josh"), .other("Josh"))
+        XCTAssertEqual(Speaker.assigned(from: .other("speaker-1"), displayName: "  "), .other("speaker-1"))
+    }
+
     func testEffectiveMeNamePrefersSession() {
         XCTAssertEqual(SpeakerNames.effectiveMeName(session: "A", global: "B"), "A")
         XCTAssertEqual(SpeakerNames.effectiveMeName(session: "  ", global: "B"), "B")

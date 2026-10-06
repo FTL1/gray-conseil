@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "snippet-play-named-voices-assign",
+            version: "0.28.4-public.9",
+            title: "Play at normal speed, keep named voices",
+            summary: "Snippet play runs at real time. Re-analyze no longer turns every remote into Me because the mic heard them. Set as / a contact on a line assigns that person even when the line was labeled as you.",
+            systemImage: "play.circle",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "snippet-me-from-mic-talkover",
             version: "0.28.4-public.8",
             title: "This line only, and Me is the microphone",

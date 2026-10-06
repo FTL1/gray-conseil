@@ -467,8 +467,10 @@ enum OverlapMashup {
     }
 }
 
-/// Where the sound came from beats the voice model: local mic is you,
-/// system audio is everyone else, both at once is Talk-over.
+/// Where the sound came from beats the voice model for *unnamed* lines:
+/// local mic is you, system audio is everyone else, both at once is Talk-over.
+/// A name the user (or a voice print) already assigned is left alone when the
+/// mic is merely bleeding the far end — otherwise every remote becomes Me.
 enum DualTrackOverlap {
     static let speechRMS: Float = 0.012
     /// One track must be this many times louder to own the line.
@@ -500,6 +502,25 @@ enum DualTrackOverlap {
         return .talkOver
     }
 
+    /// True when this buffer has any sample loud enough to be speech.
+    /// A silent system track is not dual-track evidence — do not bulk-Me.
+    static func trackHasSpeech(_ samples: [Float]) -> Bool {
+        guard !samples.isEmpty else { return false }
+        let step = max(1, samples.count / 80_000)
+        var i = 0
+        while i < samples.count {
+            if abs(samples[i]) >= speechRMS { return true }
+            i += step
+        }
+        return false
+    }
+
+    /// Leftovers, Talk-over, and Me can be moved by dual-track energy.
+    /// "Josh" stays Josh even if the microphone also heard him.
+    static func isOpenLabel(_ speaker: Speaker) -> Bool {
+        speaker.isMe || speaker.isGuestPlaceholder
+    }
+
     static func resolve(
         proposed: Speaker,
         start: TimeInterval,
@@ -509,8 +530,10 @@ enum DualTrackOverlap {
         system: [Float],
         sampleRate: Float = 16_000,
         me: Speaker = .me,
-        remotes: [Speaker] = []
+        remotes: [Speaker] = [],
+        systemHasSpeech: Bool = true
     ) -> Speaker {
+        guard systemHasSpeech else { return proposed }
         let micRMS = sliceRMS(mic, start: start, end: end, offset: offset, sampleRate: sampleRate)
         let sysRMS = sliceRMS(system, start: start, end: end, offset: offset, sampleRate: sampleRate)
         let sysSlice = AcousticFootprint.slice(
@@ -525,9 +548,9 @@ enum DualTrackOverlap {
         }
         switch kind {
         case .me:
-            return me
+            return isOpenLabel(proposed) ? me : proposed
         case .talkOver:
-            return .talkOver
+            return isOpenLabel(proposed) ? .talkOver : proposed
         case .remote:
             if proposed.isMe || proposed.isTalkOver {
                 return remotes.count == 1

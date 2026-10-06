@@ -369,6 +369,20 @@ final class VoicePrintTests: XCTestCase {
         XCTAssertFalse(unseated.isMe)
     }
 
+    func testDualTrackBothSimilarMeIsTalkOver() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0.2, count: 16_000)
+        let assigned = DualTrackOverlap.resolve(
+            proposed: .me,
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system
+        )
+        XCTAssertTrue(assigned.isTalkOver)
+    }
+
     func testDualTrackBothSimilarIsTalkOver() {
         let mic = [Float](repeating: 0.2, count: 16_000)
         let system = [Float](repeating: 0.2, count: 16_000)
@@ -389,10 +403,26 @@ final class VoicePrintTests: XCTestCase {
             mic: mic,
             system: system
         )
-        XCTAssertTrue(named.isTalkOver)
+        XCTAssertEqual(named.displayName, "Josh")
+        XCTAssertFalse(named.isTalkOver)
     }
 
-    func testDualTrackMicDominantIsMe() {
+    func testDualTrackMicDominantLeftoverIsMe() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0.02, count: 16_000)
+        let leftover = DualTrackOverlap.resolve(
+            proposed: .other("speaker-1"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me
+        )
+        XCTAssertTrue(leftover.isMe)
+    }
+
+    func testDualTrackMicDominantNamedRemoteStays() {
         let mic = [Float](repeating: 0.2, count: 16_000)
         let system = [Float](repeating: 0.02, count: 16_000)
         let assigned = DualTrackOverlap.resolve(
@@ -404,7 +434,36 @@ final class VoicePrintTests: XCTestCase {
             system: system,
             me: .me
         )
-        XCTAssertTrue(assigned.isMe)
+        XCTAssertEqual(assigned.displayName, "Josh")
+        XCTAssertFalse(assigned.isMe)
+    }
+
+    func testDualTrackSilentSystemDoesNotBulkMe() {
+        let mic = [Float](repeating: 0.2, count: 16_000)
+        let system = [Float](repeating: 0, count: 16_000)
+        XCTAssertFalse(DualTrackOverlap.trackHasSpeech(system))
+        let named = DualTrackOverlap.resolve(
+            proposed: .other("Josh"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me,
+            systemHasSpeech: false
+        )
+        XCTAssertEqual(named.displayName, "Josh")
+        let leftover = DualTrackOverlap.resolve(
+            proposed: .other("speaker-1"),
+            start: 0,
+            end: 1,
+            offset: 0,
+            mic: mic,
+            system: system,
+            me: .me,
+            systemHasSpeech: false
+        )
+        XCTAssertEqual(leftover.displayName, "speaker-1")
     }
 
     func testClassifyReverbOnLouderSystemIsRemote() {
