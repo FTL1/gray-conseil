@@ -1,5 +1,6 @@
 import AVFoundation
 import FluidAudio
+import os
 
 /// Orchestrates audio capture, speech recognition, and speaker diarization
 /// into a unified timeline of transcript segments.
@@ -8,6 +9,9 @@ import FluidAudio
 final class TranscriptionCoordinator {
     var segments: [TranscriptSegment] = []
     var isProcessing = false
+    /// Bumped on any transcript mutation so the recording view can copy when
+    /// something actually changed instead of cloning the array every 200ms.
+    private(set) var transcriptEpoch: UInt64 = 0
 
     private let formatConverter = AudioFormatConverter()
     private let micAsr = FluidAsrService(source: .microphone)
@@ -17,14 +21,15 @@ final class TranscriptionCoordinator {
     private var processingTasks: [Task<Void, Never>] = []
 
     // Overlapping windows so the same voice is seen twice and IDs stick.
-    private var systemAudioBuffer: [Float] = []
-    private var systemBufferStartTime: TimeInterval = 0
-    private let diarizationChunkDuration: TimeInterval = 15.0
-    private let diarizationHopDuration: TimeInterval = 7.5
-
-    // Buffer mic audio for diarization (used when system audio is silent)
-    private var micAudioBuffer: [Float] = []
-    private var micBufferStartTime: TimeInterval = 0
+    // Sample accumulation is off the main actor; only a ready 15s chunk hops in.
+    nonisolated(unsafe) private let systemDiarizationBuffer = DiarizationAudioBuffer(
+        chunkDuration: 15.0,
+        hopDuration: 7.5
+    )
+    nonisolated(unsafe) private let micDiarizationBuffer = DiarizationAudioBuffer(
+        chunkDuration: 15.0,
+        hopDuration: 7.5
+    )
     private var hasSystemSpeech = false
 
     // Track current draft text for replacement
@@ -107,8 +112,9 @@ final class TranscriptionCoordinator {
         isProcessing = true
         segments = []
         segmentConfidence = [:]
-        systemAudioBuffer = []
-        micAudioBuffer = []
+        transcriptEpoch = 0
+        systemDiarizationBuffer.reset()
+        micDiarizationBuffer.reset()
         hasSystemSpeech = false
         SpeakerNames.resetSession()
 
@@ -192,6 +198,7 @@ final class TranscriptionCoordinator {
         for i in segments.indices where SpeakerRelabel.matchesForRelabel(segments[i].speaker, current: current) {
             segments[i].speaker = newSpeaker
         }
+        noteTranscriptChanged()
         Task {
             await diarization.relabel(current, to: newSpeaker)
         }
@@ -202,6 +209,7 @@ final class TranscriptionCoordinator {
         for i in segments.indices where ids.contains(segments[i].id) {
             segments[i].speaker = newSpeaker
         }
+        noteTranscriptChanged()
     }
 
     func seedEnrolledPrints(_ prints: [(Speaker, [Float])], replacingAll: Bool = false) async {
@@ -225,8 +233,10 @@ final class TranscriptionCoordinator {
         // Convert to float samples for mic diarization (used when system audio is silent)
         do {
             let samples = try formatConverter.floatSamples(from: buffer)
-            Task { @MainActor [weak self] in
-                self?.accumulateMicDiarizationSamples(samples, at: timestamp)
+            if let chunk = micDiarizationBuffer.append(samples, at: timestamp) {
+                Task { @MainActor [weak self] in
+                    await self?.processMicDiarizationChunk(chunk.samples, startTime: chunk.startTime)
+                }
             }
         } catch {
             // Conversion failed — skip this buffer
@@ -247,8 +257,10 @@ final class TranscriptionCoordinator {
         // Convert to float samples for diarization
         do {
             let samples = try formatConverter.floatSamples(from: buffer)
-            Task { @MainActor [weak self] in
-                self?.accumulateDiarizationSamples(samples, at: timestamp)
+            if let chunk = systemDiarizationBuffer.append(samples, at: timestamp) {
+                Task { @MainActor [weak self] in
+                    await self?.processDiarizationChunk(chunk.samples, startTime: chunk.startTime)
+                }
             }
         } catch {
             // Conversion failed — skip this buffer
@@ -294,6 +306,7 @@ final class TranscriptionCoordinator {
             LogManager.shared.log("\(label) draft discarded (conf \(String(format: "%.2f", conf))): \(discardedText)", category: .transcription, level: .info)
         }
         draftID = nil
+        noteTranscriptChanged()
     }
 
     private func handleMicUpdate(_ update: FluidAsrService.TranscriptUpdate) {
@@ -346,6 +359,7 @@ final class TranscriptionCoordinator {
             currentMicDraftID = segment.id
             segments.append(segment)
         }
+        noteTranscriptChanged()
     }
 
     private func handleSystemUpdate(_ update: FluidAsrService.TranscriptUpdate) {
@@ -405,30 +419,10 @@ final class TranscriptionCoordinator {
             currentSystemDraftID = segment.id
             segments.append(segment)
         }
+        noteTranscriptChanged()
     }
 
     // MARK: - Diarization
-
-    private func accumulateDiarizationSamples(_ samples: [Float], at timestamp: TimeInterval) {
-        if systemAudioBuffer.isEmpty {
-            systemBufferStartTime = timestamp
-        }
-        systemAudioBuffer.append(contentsOf: samples)
-
-        let samplesNeeded = Int(diarizationChunkDuration * 16000)
-        let hopSamples = Int(diarizationHopDuration * 16000)
-        if systemAudioBuffer.count >= samplesNeeded {
-            let chunk = Array(systemAudioBuffer.prefix(samplesNeeded))
-            let startTime = systemBufferStartTime
-            let drop = min(hopSamples, systemAudioBuffer.count)
-            systemAudioBuffer.removeFirst(drop)
-            systemBufferStartTime += diarizationHopDuration
-
-            Task {
-                await processDiarizationChunk(chunk, startTime: startTime)
-            }
-        }
-    }
 
     private func processDiarizationChunk(_ samples: [Float], startTime: TimeInterval) async {
         do {
@@ -436,58 +430,26 @@ final class TranscriptionCoordinator {
                 samples,
                 atTime: startTime
             )
-
-            for diarized in diarizedSegments {
-                for i in segments.indices {
-                    let seg = segments[i]
-                    guard seg.isFinal else { continue }
-                    guard seg.startTime >= diarized.startTime - 1.0,
-                          seg.startTime <= diarized.endTime + 1.0 else { continue }
-                    let next = SpeakerContinuity.resolvedLabel(
-                        current: seg.speaker,
-                        proposed: diarized.speaker
-                    )
-                    if next != seg.speaker {
-                        segments[i].speaker = next
-                    }
-                }
+            applyDiarizedSpeakerLabels(diarizedSegments) { seg, diarized in
+                guard seg.isFinal else { return nil }
+                guard seg.startTime >= diarized.startTime - 1.0,
+                      seg.startTime <= diarized.endTime + 1.0 else { return nil }
+                return SpeakerContinuity.resolvedLabel(
+                    current: seg.speaker,
+                    proposed: diarized.speaker
+                )
             }
-            considerSelfIdentifications()
         } catch {
             LogManager.shared.log("Diarization error: \(error.localizedDescription)", category: .transcription, level: .warning)
         }
     }
 
     private func processRemainingDiarizationBuffer() async {
-        guard systemAudioBuffer.count >= 48_000 else { return }
-        let chunk = systemAudioBuffer
-        let startTime = systemBufferStartTime
-        systemAudioBuffer = []
-        await processDiarizationChunk(chunk, startTime: startTime)
+        guard let chunk = systemDiarizationBuffer.flushRemaining(minSamples: 48_000) else { return }
+        await processDiarizationChunk(chunk.samples, startTime: chunk.startTime)
     }
 
     // MARK: - Mic Diarization (fallback when system audio is silent)
-
-    private func accumulateMicDiarizationSamples(_ samples: [Float], at timestamp: TimeInterval) {
-        if micAudioBuffer.isEmpty {
-            micBufferStartTime = timestamp
-        }
-        micAudioBuffer.append(contentsOf: samples)
-
-        let samplesNeeded = Int(diarizationChunkDuration * 16000)
-        let hopSamples = Int(diarizationHopDuration * 16000)
-        if micAudioBuffer.count >= samplesNeeded {
-            let chunk = Array(micAudioBuffer.prefix(samplesNeeded))
-            let startTime = micBufferStartTime
-            let drop = min(hopSamples, micAudioBuffer.count)
-            micAudioBuffer.removeFirst(drop)
-            micBufferStartTime += diarizationHopDuration
-
-            Task {
-                await processMicDiarizationChunk(chunk, startTime: startTime)
-            }
-        }
-    }
 
     private func processMicDiarizationChunk(_ samples: [Float], startTime: TimeInterval) async {
         // Only relabel mic segments when system audio has produced no speech.
@@ -499,18 +461,12 @@ final class TranscriptionCoordinator {
                 samples,
                 atTime: startTime
             )
-
-            for diarized in diarizedSegments {
-                for i in segments.indices {
-                    let seg = segments[i]
-                    if seg.speaker.isMe
-                        && seg.isFinal
-                        && seg.startTime >= diarized.startTime - 1.0
-                        && seg.startTime <= diarized.endTime + 1.0
-                    {
-                        segments[i].speaker = diarized.speaker
-                    }
-                }
+            applyDiarizedSpeakerLabels(diarizedSegments) { seg, diarized in
+                guard seg.speaker.isMe,
+                      seg.isFinal,
+                      seg.startTime >= diarized.startTime - 1.0,
+                      seg.startTime <= diarized.endTime + 1.0 else { return nil }
+                return diarized.speaker
             }
         } catch {
             LogManager.shared.log("Mic diarization error: \(error.localizedDescription)", category: .transcription, level: .warning)
@@ -518,21 +474,102 @@ final class TranscriptionCoordinator {
     }
 
     private func processRemainingMicDiarizationBuffer() async {
-        guard !hasSystemSpeech, micAudioBuffer.count >= 48_000 else { return }
-        let chunk = micAudioBuffer
-        let startTime = micBufferStartTime
-        micAudioBuffer = []
-        await processMicDiarizationChunk(chunk, startTime: startTime)
+        guard !hasSystemSpeech else { return }
+        guard let chunk = micDiarizationBuffer.flushRemaining(minSamples: 48_000) else { return }
+        await processMicDiarizationChunk(chunk.samples, startTime: chunk.startTime)
     }
 
-    private func considerSelfIdentifications() {
+    /// One MainActor pass after FluidAudio returns. Sequential spans still
+    /// chain through `resolvedLabel`; we hop back from diarization once per chunk.
+    private func applyDiarizedSpeakerLabels(
+        _ diarizedSegments: [DiarizedSegment],
+        matching: (TranscriptSegment, DiarizedSegment) -> Speaker?
+    ) {
+        var didChange = false
+        for diarized in diarizedSegments {
+            for i in segments.indices {
+                if let next = matching(segments[i], diarized), next != segments[i].speaker {
+                    segments[i].speaker = next
+                    didChange = true
+                }
+            }
+        }
+        let introChanged = considerSelfIdentifications()
+        if didChange || introChanged {
+            noteTranscriptChanged()
+        }
+    }
+
+    @discardableResult
+    private func considerSelfIdentifications() -> Bool {
         let mine = myLabels.isEmpty
             ? ([SpeakerNames.effectiveMeName] + [Speaker.defaultMeLabel]).compactMap { $0 }
             : myLabels
-        _ = SpeakerSelfIntroduction.apply(
+        return SpeakerSelfIntroduction.apply(
             segments: segments,
             inviteeNames: inviteeNames,
             myLabels: mine
-        )
+        ) > 0
+    }
+
+    private func noteTranscriptChanged() {
+        transcriptEpoch &+= 1
+    }
+}
+
+/// Accumulates 16 kHz diarization samples off the main actor. Capture callbacks
+/// append under a lock; a chunk is returned only when 15 seconds are ready.
+final class DiarizationAudioBuffer: Sendable {
+    struct Chunk: Sendable {
+        let samples: [Float]
+        let startTime: TimeInterval
+    }
+
+    private struct State {
+        var samples: [Float] = []
+        var startTime: TimeInterval = 0
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    private let chunkSampleCount: Int
+    private let hopSampleCount: Int
+    private let hopDuration: TimeInterval
+
+    init(chunkDuration: TimeInterval, hopDuration: TimeInterval, sampleRate: Double = 16_000) {
+        chunkSampleCount = Int(chunkDuration * sampleRate)
+        hopSampleCount = Int(hopDuration * sampleRate)
+        self.hopDuration = hopDuration
+    }
+
+    func append(_ newSamples: [Float], at timestamp: TimeInterval) -> Chunk? {
+        state.withLock { state in
+            if state.samples.isEmpty {
+                state.startTime = timestamp
+            }
+            state.samples.append(contentsOf: newSamples)
+            guard state.samples.count >= chunkSampleCount else { return nil }
+            let chunk = Array(state.samples.prefix(chunkSampleCount))
+            let startTime = state.startTime
+            let drop = min(hopSampleCount, state.samples.count)
+            state.samples.removeFirst(drop)
+            state.startTime += hopDuration
+            return Chunk(samples: chunk, startTime: startTime)
+        }
+    }
+
+    func flushRemaining(minSamples: Int) -> Chunk? {
+        state.withLock { state in
+            guard state.samples.count >= minSamples else {
+                state.samples = []
+                return nil
+            }
+            let chunk = Chunk(samples: state.samples, startTime: state.startTime)
+            state.samples = []
+            return chunk
+        }
+    }
+
+    func reset() {
+        state.withLock { $0 = State() }
     }
 }

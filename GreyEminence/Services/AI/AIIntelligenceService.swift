@@ -51,7 +51,6 @@ struct MeetingRoster: Sendable {
     /// Snapshot from a meeting's attendee list, with "me" resolved via the
     /// My Profile contact. Taken fresh at each analysis pass because the
     /// attendee list can change mid-recording (calendar link/unlink).
-    @MainActor
     static func snapshot(for meeting: Meeting) -> MeetingRoster {
         let myID = Meeting.storedMyContactID
         let contactName = meeting.attendees.first { $0.id == myID }?.name

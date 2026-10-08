@@ -713,6 +713,41 @@ enum TranscriptDisplayItem: Identifiable, Equatable {
     }
 }
 
+/// Compact list identity for the transcript LazyVStack. Hide/show patches
+/// this array; SwiftUI keeps rows whose `id` did not change. Do not put a
+/// mixer generation on the stack — that throws every row away.
+struct TranscriptRowRef: Identifiable, Equatable, Hashable {
+    enum Kind: Equatable, Hashable {
+        case segment(UUID)
+        case collapsed(speaker: Speaker, count: Int)
+    }
+
+    let kind: Kind
+
+    var id: String {
+        switch kind {
+        case .segment(let segmentID):
+            TranscriptDisplayItem.scrollID(for: segmentID)
+        case .collapsed(let speaker, _):
+            speaker.identityKey.hideStubID
+        }
+    }
+
+    var segmentID: UUID? {
+        if case .segment(let segmentID) = kind { return segmentID }
+        return nil
+    }
+
+    init(_ item: TranscriptDisplayItem) {
+        switch item {
+        case .segment(let segment):
+            kind = .segment(segment.id)
+        case .collapsed(let speaker, let count):
+            kind = .collapsed(speaker: speaker, count: count)
+        }
+    }
+}
+
 enum TranscriptDisplay {
     static func items(
         from segments: [TranscriptSegment],
@@ -754,6 +789,33 @@ enum TranscriptDisplay {
             items.append(.segment(segment))
         }
         return items
+    }
+
+    static func rowRefs(
+        from segments: [TranscriptSegment],
+        hiddenSpeakers: [Speaker],
+        isolatedSpeaker: Speaker?,
+        searchSpeaker: Speaker? = nil,
+        searchQuery: String = "",
+        isolatedSpeakers: [Speaker]? = nil
+    ) -> [TranscriptRowRef] {
+        items(
+            from: segments,
+            hiddenSpeakers: hiddenSpeakers,
+            isolatedSpeaker: isolatedSpeaker,
+            searchSpeaker: searchSpeaker,
+            searchQuery: searchQuery,
+            isolatedSpeakers: isolatedSpeakers
+        ).map(TranscriptRowRef.init)
+    }
+
+    static func uniqueDisplayNames(in segments: [TranscriptSegment]) -> [String] {
+        segments.reduce(into: [String]()) { result, segment in
+            let name = segment.speaker.displayName
+            if !result.contains(where: { $0.compare(name, options: .caseInsensitive) == .orderedSame }) {
+                result.append(name)
+            }
+        }
     }
 
     static func isHidden(_ speaker: Speaker, hiddenSpeakers: [Speaker]) -> Bool {

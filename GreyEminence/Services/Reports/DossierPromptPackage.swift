@@ -21,7 +21,7 @@ enum DossierPromptPackage {
         ## Hard rules (do not break these)
         1. DO NOT hallucinate. DO NOT invent facts, numbers, names, dates, stakeholders, commitments, or questions.
         2. If something is not in `meeting.json` and not in a transcript file in this package, say it is not in the source.
-        3. Do not add financing, environmental, engagement, timeline, or other due-diligence questions unless they already appear in `follow_ups` or the transcript.
+        3. Do not add budget, legal, engagement, timeline, or other due-diligence questions unless they already appear in `follow_ups` or the transcript.
         4. Do not treat a calendar title or a shared PDF's subject as the meeting's purpose if `purpose` is present.
         5. Quotes must be copied verbatim. Never paraphrase a quote and present it as spoken words.
         6. Screen-share recaps (if present) are secondary to the transcript. Prefer the transcript when they disagree.

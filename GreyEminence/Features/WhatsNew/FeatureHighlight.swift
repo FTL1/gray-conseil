@@ -24,6 +24,15 @@ enum FeatureHighlightCatalog {
     /// set its `version` to that release's MARKETING_VERSION.
     static let all: [FeatureHighlight] = [
         FeatureHighlight(
+            id: "speaker-id-after-stop-two-week-list",
+            version: "0.28.4-public.10",
+            title: "Names voices after the meeting",
+            summary: "Voice prints and “I’m Bob” run after you stop, and at launch for recent unnamed remotes. The meetings list opens on the last two weeks. Save voice print fills both stamp stores.",
+            systemImage: "person.crop.circle.badge.checkmark",
+            tint: .teal,
+            destination: nil
+        ),
+        FeatureHighlight(
             id: "snippet-play-named-voices-assign",
             version: "0.28.4-public.9",
             title: "Play at normal speed, keep named voices",

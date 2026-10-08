@@ -142,12 +142,24 @@ struct GreyEminenceApp: App {
                             modelContainer: container,
                             recordingViewModel: recordingViewModel
                         )
-                        EmbeddingBackfillService.scheduleAtLaunch(
-                            mainContext: container.mainContext
-                        )
-                        GrokLibrary.scheduleAtLaunch(
-                            mainContext: container.mainContext
-                        )
+                        let isBusy: @MainActor () -> Bool = { [recordingViewModel] in
+                            recordingViewModel.state != .idle || recordingViewModel.isFinishing
+                        }
+                        Task(priority: .utility) {
+                            try? await Task.sleep(for: .seconds(10))
+                            await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+                            await GrokLibrary.syncAll(container: container)
+                            await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+                            await EmbeddingBackfillService.runNow(
+                                container: container,
+                                isBusy: isBusy
+                            )
+                            await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+                            await SpeakerIdentityPass.healRecent(
+                                container: container,
+                                isBusy: isBusy
+                            )
+                        }
                         lifecycle.bind(
                             recordingViewModel: recordingViewModel,
                             modelContextProvider: { container.mainContext }

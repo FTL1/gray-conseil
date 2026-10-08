@@ -212,7 +212,7 @@ enum Speaker: Codable, Hashable, Sendable {
     }
 
     /// Identity for one transcript line. Unlike `renamed`, a Me line
-    /// tagged as Robert becomes a remote Robert — it does not stay Me
+    /// tagged as Bob becomes a remote Bob — it does not stay Me
     /// under a new display name.
     static func assigned(from original: Speaker, displayName: String) -> Speaker {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)

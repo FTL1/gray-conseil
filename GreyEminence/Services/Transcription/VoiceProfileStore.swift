@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Enrolled voices, keyed by contact.
 ///
@@ -74,6 +75,47 @@ enum VoiceProfileStore {
         }
     }
 
+    /// Combine `VoiceProfiles.json` with Contact stamp collections so Repair,
+    /// high-quality re-process, leftover matching, and Re-analyze see the
+    /// same people. Save voice print writes both stores; this union still
+    /// covers stamps that were saved before that.
+    @MainActor
+    static func mergedProfiles(
+        contacts: [Contact],
+        stored: [Profile]? = nil
+    ) -> [Profile] {
+        var byID: [UUID: Profile] = [:]
+        for profile in stored ?? load() {
+            byID[profile.contactID] = profile
+        }
+        for contact in contacts where !contact.isArchived {
+            let embeddings = contact.voicePrintEmbeddings().filter { $0.count >= 8 }
+            guard !embeddings.isEmpty else { continue }
+            let turns = embeddings.map { ($0, 8.0) }
+            guard let signature = VoiceSignature.from(turns: turns) else { continue }
+            if let existing = byID[contact.id] {
+                let updatedAt = contact.voicePrintUpdatedAt.map { max(existing.updatedAt, $0) }
+                    ?? existing.updatedAt
+                byID[contact.id] = Profile(
+                    contactID: contact.id,
+                    contactName: contact.name,
+                    signature: existing.signature.merged(with: signature),
+                    meetingCount: max(existing.meetingCount, embeddings.count),
+                    updatedAt: updatedAt
+                )
+            } else {
+                byID[contact.id] = Profile(
+                    contactID: contact.id,
+                    contactName: contact.name,
+                    signature: signature,
+                    meetingCount: embeddings.count,
+                    updatedAt: contact.voicePrintUpdatedAt ?? .now
+                )
+            }
+        }
+        return Array(byID.values)
+    }
+
     /// Record that `signature` belongs to a contact, folding it into any
     /// profile already held for them.
     @discardableResult
@@ -105,6 +147,21 @@ enum VoiceProfileStore {
             category: .transcription
         )
         return updated
+    }
+
+    /// Same enroll path from a Contact stamp (WeSpeaker embedding), so
+    /// Save voice print teaches Repair and high-quality re-process.
+    @discardableResult
+    static func enroll(
+        embedding: [Float],
+        contactID: UUID,
+        contactName: String,
+        seconds: Double = 8
+    ) -> Profile? {
+        guard embedding.count >= 8,
+              let signature = VoiceSignature.from(turns: [(embedding, max(seconds, 0.5))])
+        else { return nil }
+        return enroll(signature, contactID: contactID, contactName: contactName)
     }
 
     static func forget(contactID: UUID) {

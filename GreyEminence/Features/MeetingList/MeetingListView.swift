@@ -28,14 +28,85 @@ enum MeetingListGroupBy: String, CaseIterable, Identifiable {
 }
 
 /// Recent Meetings vs Archive. Archive is the full library (for extract).
-/// The Meetings list stays the last three months, minus anything filed away.
+/// The Meetings sidebar loads the last two weeks of unfiled library meetings
+/// in SwiftData; Find, Archive, and “Show last 90 days” / “Show all meetings”
+/// open older sessions when asked.
 enum MeetingLibrary {
-    static let recentMonths = 3
+    static let recentDays = 14
+    static let extendedDays = 90
+
+    enum Horizon: String, Equatable {
+        case recent
+        case extended
+        case allUnarchived
+
+        func cutoff(now: Date = .now, calendar: Calendar = .current) -> Date {
+            let startOfToday = calendar.startOfDay(for: now)
+            switch self {
+            case .recent:
+                return calendar.date(byAdding: .day, value: -MeetingLibrary.recentDays, to: startOfToday)
+                    ?? .distantPast
+            case .extended:
+                return calendar.date(byAdding: .day, value: -MeetingLibrary.extendedDays, to: startOfToday)
+                    ?? .distantPast
+            case .allUnarchived:
+                return .distantPast
+            }
+        }
+
+        var next: Horizon? {
+            switch self {
+            case .recent: return .extended
+            case .extended: return .allUnarchived
+            case .allUnarchived: return nil
+            }
+        }
+
+        /// Label for the control that expands this horizon.
+        var loadOlderTitle: String {
+            switch self {
+            case .recent: return "Show last 90 days"
+            case .extended: return "Show all meetings"
+            case .allUnarchived: return "Show all meetings"
+            }
+        }
+
+        var emptyTitle: String {
+            switch self {
+            case .recent: return "No meetings in the last two weeks"
+            case .extended: return "No meetings in the last 90 days"
+            case .allUnarchived: return "No Meetings Yet"
+            }
+        }
+
+        var emptyDescription: String {
+            switch self {
+            case .recent, .extended:
+                return "Find (⇧⌘F) and Archive still open older sessions."
+            case .allUnarchived:
+                return "Start a recording to create your first meeting"
+            }
+        }
+    }
 
     static func recentCutoff(now: Date = .now, calendar: Calendar = .current) -> Date {
-        let startOfCurrentMonth = calendar.dateInterval(of: .month, for: now)?.start ?? now
-        return calendar.date(byAdding: .month, value: -(recentMonths - 1), to: startOfCurrentMonth)
-            ?? .distantPast
+        Horizon.recent.cutoff(now: now, calendar: calendar)
+    }
+
+    static func listPredicate(cutoff: Date, alsoIncluding pinnedID: UUID? = nil) -> Predicate<Meeting> {
+        if let pinnedID {
+            return #Predicate<Meeting> { meeting in
+                meeting.isInterviewMeeting == false && (
+                    meeting.id == pinnedID
+                    || (meeting.date >= cutoff && meeting.isArchived == false)
+                )
+            }
+        }
+        return #Predicate<Meeting> { meeting in
+            meeting.date >= cutoff
+                && meeting.isArchived == false
+                && meeting.isInterviewMeeting == false
+        }
     }
 
     static func isLibrary(_ meeting: Meeting) -> Bool {
@@ -66,35 +137,11 @@ enum MeetingLibrary {
 }
 
 struct MeetingListView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Meeting.date, order: .reverse) private var meetings: [Meeting]
     @Binding var selectedMeeting: Meeting?
     @Binding var selectedMeetingIDs: Set<UUID>
     var onShowArchive: (() -> Void)?
     var onExtract: (ArchiveExtractLaunch) -> Void
-    @AppStorage("meetingListGroupBy") private var groupByRaw = MeetingListGroupBy.date.rawValue
-    @State private var renamingMeetingID: UUID?
-
-    private var groupBy: MeetingListGroupBy {
-        MeetingListGroupBy(rawValue: groupByRaw) ?? .date
-    }
-
-    private var cutoffDate: Date {
-        MeetingLibrary.recentCutoff()
-    }
-
-    private var visibleMeetings: [Meeting] {
-        let cutoff = cutoffDate
-        return meetings.filter { MeetingLibrary.isOnMeetingsList($0, cutoff: cutoff) }
-    }
-
-    private var libraryCount: Int {
-        meetings.filter { MeetingLibrary.isLibrary($0) }.count
-    }
-
-    private var groupedMeetings: [(String, [Meeting])] {
-        MeetingListGrouping.sections(for: visibleMeetings, groupBy: groupBy, now: .now)
-    }
+    @State private var horizon: MeetingLibrary.Horizon = .recent
 
     /// Kept for tests that still call through the view.
     static func groupSections(
@@ -105,9 +152,81 @@ struct MeetingListView: View {
         MeetingListGrouping.dateSections(for: meetings, now: now, calendar: calendar)
     }
 
+    var body: some View {
+        MeetingListBody(
+            horizon: horizon,
+            pinnedID: pinnedID,
+            selectedMeeting: $selectedMeeting,
+            selectedMeetingIDs: $selectedMeetingIDs,
+            onShowArchive: onShowArchive,
+            onExtract: onExtract,
+            onChangeHorizon: { horizon = $0 }
+        )
+        .id(listIdentity)
+        .navigationTitle("Meetings")
+    }
+
+    /// Pin a meeting opened from Find/Archive so it stays on the list without
+    /// loading the rest of the library. Selection inside the window does not
+    /// change Query identity.
+    private var pinnedID: UUID? {
+        guard let meeting = selectedMeeting, MeetingLibrary.isLibrary(meeting) else { return nil }
+        if MeetingLibrary.isOnMeetingsList(meeting, cutoff: horizon.cutoff()) { return nil }
+        return meeting.id
+    }
+
+    private var listIdentity: String {
+        "\(horizon.rawValue)|\(pinnedID?.uuidString ?? "")"
+    }
+}
+
+private struct MeetingListBody: View {
+    let horizon: MeetingLibrary.Horizon
+    @Binding var selectedMeeting: Meeting?
+    @Binding var selectedMeetingIDs: Set<UUID>
+    var onShowArchive: (() -> Void)?
+    var onExtract: (ArchiveExtractLaunch) -> Void
+    var onChangeHorizon: (MeetingLibrary.Horizon) -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Query private var meetings: [Meeting]
+    @AppStorage("meetingListGroupBy") private var groupByRaw = MeetingListGroupBy.date.rawValue
+    @State private var renamingMeetingID: UUID?
+
+    init(
+        horizon: MeetingLibrary.Horizon,
+        pinnedID: UUID?,
+        selectedMeeting: Binding<Meeting?>,
+        selectedMeetingIDs: Binding<Set<UUID>>,
+        onShowArchive: (() -> Void)?,
+        onExtract: @escaping (ArchiveExtractLaunch) -> Void,
+        onChangeHorizon: @escaping (MeetingLibrary.Horizon) -> Void
+    ) {
+        self.horizon = horizon
+        self._selectedMeeting = selectedMeeting
+        self._selectedMeetingIDs = selectedMeetingIDs
+        self.onShowArchive = onShowArchive
+        self.onExtract = onExtract
+        self.onChangeHorizon = onChangeHorizon
+        let cutoff = horizon.cutoff()
+        _meetings = Query(
+            filter: MeetingLibrary.listPredicate(cutoff: cutoff, alsoIncluding: pinnedID),
+            sort: \Meeting.date,
+            order: .reverse
+        )
+    }
+
+    private var groupBy: MeetingListGroupBy {
+        MeetingListGroupBy(rawValue: groupByRaw) ?? .date
+    }
+
+    private var groupedMeetings: [(String, [Meeting])] {
+        MeetingListGrouping.sections(for: meetings, groupBy: groupBy, now: .now)
+    }
+
     private func deleteMeeting(_ meeting: Meeting) {
         selectedMeetingIDs.remove(meeting.id)
-        MeetingDeletion.delete(meeting, in: modelContext, allMeetings: meetings)
+        MeetingDeletion.delete(meeting, in: modelContext)
     }
 
     private func archiveMeetings(_ targets: [Meeting]) {
@@ -130,7 +249,7 @@ struct MeetingListView: View {
             seriesLabel: seriesLabel,
             seedMeetingID: meeting?.id,
             selectedIDs: selectedMeetingIDs,
-            visibleIDs: Set(visibleMeetings.map(\.id)),
+            visibleIDs: Set(meetings.map(\.id)),
             groupMeetingIDs: Set(group.map(\.id))
         )
     }
@@ -141,7 +260,6 @@ struct MeetingListView: View {
             Divider()
             meetingList
         }
-        .navigationTitle("Meetings")
     }
 
     private var groupPickerBar: some View {
@@ -173,7 +291,7 @@ struct MeetingListView: View {
                 Label("Export…", systemImage: "square.and.arrow.up")
             }
             .help("Export transcripts and intel as a zip or PDF for the selected meetings, a series, or everything currently listed.")
-            .disabled(visibleMeetings.isEmpty)
+            .disabled(meetings.isEmpty)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -194,7 +312,7 @@ struct MeetingListView: View {
                                 MeetingExtractContextButtons(
                                     meeting: meeting,
                                     selectedIDs: selectedMeetingIDs,
-                                    visibleIDs: Set(visibleMeetings.map(\.id)),
+                                    visibleIDs: Set(meetings.map(\.id)),
                                     library: meetings,
                                     onExtract: onExtract
                                 )
@@ -249,8 +367,23 @@ struct MeetingListView: View {
                 }
             }
 
-            if libraryCount > 0, let onShowArchive {
-                Section {
+            Section {
+                if let next = horizon.next {
+                    Button {
+                        onChangeHorizon(next)
+                    } label: {
+                        HStack {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(.secondary)
+                            Text(horizon.loadOlderTitle)
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("The list loads the last two weeks until you ask for more. Find (⇧⌘F) also opens older sessions.")
+                }
+                if let onShowArchive {
                     Button {
                         onShowArchive()
                     } label: {
@@ -259,14 +392,11 @@ struct MeetingListView: View {
                                 .foregroundStyle(.secondary)
                             Text("View archive")
                             Spacer()
-                            Text("\(libraryCount)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .help("Every meeting lives in Archive for extract. File any meeting away from this list.")
+                    .help("Every meeting lives in Archive for extract. File any meeting away from this list. Find (⇧⌘F) searches the whole library.")
                 }
             }
         }
@@ -294,12 +424,19 @@ struct MeetingListView: View {
             )
         }
         .overlay {
-            if visibleMeetings.isEmpty && libraryCount == 0 {
-                ContentUnavailableView(
-                    "No Meetings Yet",
-                    systemImage: "waveform",
-                    description: Text("Start a recording to create your first meeting")
-                )
+            if meetings.isEmpty {
+                ContentUnavailableView {
+                    Label(horizon.emptyTitle, systemImage: "waveform")
+                } description: {
+                    Text(horizon.emptyDescription)
+                } actions: {
+                    if let next = horizon.next {
+                        Button(horizon.loadOlderTitle) { onChangeHorizon(next) }
+                    }
+                    if let onShowArchive {
+                        Button("View archive", action: onShowArchive)
+                    }
+                }
             }
         }
     }

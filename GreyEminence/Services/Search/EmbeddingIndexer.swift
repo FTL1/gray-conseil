@@ -16,24 +16,21 @@ final class EmbeddingIndexer {
 
     /// Embed everything in a single meeting. Writes one SwiftData save at the end.
     func indexMeeting(_ meeting: Meeting) async {
+        await index(EmbeddingIndexPayload(meeting: meeting))
+    }
+
+    func index(_ payload: EmbeddingIndexPayload) async {
         guard service.isAvailable else { return }
 
-        // Snapshot every value we need BEFORE the first await. Indexing kicks
-        // off from stopRecording, which means the meeting is on screen — and
-        // the user can delete it from the list while we're suspended on
-        // `service.embed(...)`. After resumption, accessing tombstoned
-        // SwiftData properties is at best lossy and at worst a crash.
-        let snapshot = MeetingSnapshot(meeting: meeting)
-
-        for chunk in Self.buildTranscriptChunks(segments: snapshot.segments, meetingTitle: snapshot.title) {
+        for chunk in payload.chunks {
             guard let vec = await service.embed(chunk.embeddingText) else { continue }
             let record = EmbeddingRecord(
                 id: "chunk:\(chunk.firstSegmentID)",
                 sourceID: chunk.firstSegmentID,
                 sourceKind: .transcriptSegment,
-                meetingID: snapshot.id,
-                meetingTitle: snapshot.title,
-                meetingDate: snapshot.date,
+                meetingID: payload.id,
+                meetingTitle: payload.title,
+                meetingDate: payload.date,
                 text: chunk.displayText,
                 vector: vec,
                 modelIdentifier: service.modelIdentifier
@@ -41,15 +38,15 @@ final class EmbeddingIndexer {
             store.upsert(record)
         }
 
-        for action in snapshot.actionItems {
+        for action in payload.actionItems {
             guard let vec = await service.embed(action.text) else { continue }
             let record = EmbeddingRecord(
                 id: "action:\(action.id)",
                 sourceID: action.id,
                 sourceKind: .actionItem,
-                meetingID: snapshot.id,
-                meetingTitle: snapshot.title,
-                meetingDate: snapshot.date,
+                meetingID: payload.id,
+                meetingTitle: payload.title,
+                meetingDate: payload.date,
                 text: action.text,
                 vector: vec,
                 modelIdentifier: service.modelIdentifier
@@ -57,15 +54,15 @@ final class EmbeddingIndexer {
             store.upsert(record)
         }
 
-        for insight in snapshot.insights {
+        for insight in payload.insights {
             if !insight.summary.isEmpty, let vec = await service.embed(insight.summary) {
                 let record = EmbeddingRecord(
                     id: "summary:\(insight.id)",
                     sourceID: insight.id,
                     sourceKind: .meetingSummary,
-                    meetingID: snapshot.id,
-                    meetingTitle: snapshot.title,
-                    meetingDate: snapshot.date,
+                    meetingID: payload.id,
+                    meetingTitle: payload.title,
+                    meetingDate: payload.date,
                     text: insight.summary,
                     vector: vec,
                     modelIdentifier: service.modelIdentifier
@@ -78,9 +75,9 @@ final class EmbeddingIndexer {
                     id: "followup:\(insight.id):\(i)",
                     sourceID: insight.id,
                     sourceKind: .followUpQuestion,
-                    meetingID: snapshot.id,
-                    meetingTitle: snapshot.title,
-                    meetingDate: snapshot.date,
+                    meetingID: payload.id,
+                    meetingTitle: payload.title,
+                    meetingDate: payload.date,
                     text: question,
                     vector: vec,
                     modelIdentifier: service.modelIdentifier
@@ -90,16 +87,16 @@ final class EmbeddingIndexer {
         }
 
         var indexedFrames = 0
-        for frame in snapshot.screenFrames {
+        for frame in payload.screenFrames {
             guard let text = Self.frameEmbeddingText(observation: frame.observation, ocrText: frame.ocrText) else { continue }
-            guard let vec = await service.embed("Meeting: \(snapshot.title) — screen share\n\(text)") else { continue }
+            guard let vec = await service.embed("Meeting: \(payload.title) — screen share\n\(text)") else { continue }
             let record = EmbeddingRecord(
                 id: "frame:\(frame.id)",
                 sourceID: frame.id,
                 sourceKind: .screenObservation,
-                meetingID: snapshot.id,
-                meetingTitle: snapshot.title,
-                meetingDate: snapshot.date,
+                meetingID: payload.id,
+                meetingTitle: payload.title,
+                meetingDate: payload.date,
                 text: text,
                 vector: vec,
                 modelIdentifier: service.modelIdentifier
@@ -107,20 +104,20 @@ final class EmbeddingIndexer {
             store.upsert(record)
             indexedFrames += 1
         }
-        if !snapshot.screenFrames.isEmpty {
-            LogManager.send("Indexed \(indexedFrames)/\(snapshot.screenFrames.count) screen frame(s) for search", category: .screen, meetingID: snapshot.id)
+        if !payload.screenFrames.isEmpty {
+            LogManager.send("Indexed \(indexedFrames)/\(payload.screenFrames.count) screen frame(s) for search", category: .screen, meetingID: payload.id)
         }
 
-        for summary in snapshot.sessionSummaries {
+        for summary in payload.sessionSummaries {
             guard !summary.narrative.isEmpty,
-                  let vec = await service.embed("Meeting: \(snapshot.title) — screen share recap\n\(summary.narrative)") else { continue }
+                  let vec = await service.embed("Meeting: \(payload.title) — screen share recap\n\(summary.narrative)") else { continue }
             let record = EmbeddingRecord(
                 id: "sessionSummary:\(summary.sessionID.uuidString)",
                 sourceID: summary.sessionID,
                 sourceKind: .sessionNarrative,
-                meetingID: snapshot.id,
-                meetingTitle: snapshot.title,
-                meetingDate: snapshot.date,
+                meetingID: payload.id,
+                meetingTitle: payload.title,
+                meetingDate: payload.date,
                 text: summary.narrative,
                 vector: vec,
                 modelIdentifier: service.modelIdentifier
@@ -147,59 +144,6 @@ final class EmbeddingIndexer {
         return ocrExcerpt
     }
 
-    private struct MeetingSnapshot {
-        let id: UUID
-        let title: String
-        let date: Date
-        let segments: [TranscriptSegment]
-        let actionItems: [ActionSnapshot]
-        let insights: [InsightSnapshot]
-        let screenFrames: [FrameSnapshot]
-        let sessionSummaries: [SessionSummarySnapshot]
-
-        init(meeting: Meeting) {
-            self.id = meeting.id
-            self.title = meeting.title
-            self.date = meeting.date
-            self.segments = meeting.segments
-            self.actionItems = meeting.actionItems.map { item in
-                let text = item.assignee.map { "\(item.text) (assigned: \($0))" } ?? item.text
-                return ActionSnapshot(id: item.id, text: text)
-            }
-            self.insights = meeting.insights.map {
-                InsightSnapshot(id: $0.id, summary: $0.summary, followUpQuestions: $0.followUpQuestions)
-            }
-            self.screenFrames = meeting.screenFrames.map {
-                FrameSnapshot(id: $0.id, observation: $0.observation, ocrText: $0.ocrText)
-            }
-            self.sessionSummaries = meeting.sessionSummaries.map {
-                SessionSummarySnapshot(sessionID: $0.sessionID, narrative: $0.narrative)
-            }
-        }
-    }
-
-    private struct SessionSummarySnapshot {
-        let sessionID: UUID
-        let narrative: String
-    }
-
-    private struct FrameSnapshot {
-        let id: UUID
-        let observation: String?
-        let ocrText: String?
-    }
-
-    private struct ActionSnapshot {
-        let id: UUID
-        let text: String
-    }
-
-    private struct InsightSnapshot {
-        let id: UUID
-        let summary: String
-        let followUpQuestions: [String]
-    }
-
     /// Full reindex across all meetings in the main store. Call after the user
     /// switches embedding providers or presses "Reindex all".
     func reindexAll(mainContext: ModelContext, onProgress: @MainActor @escaping (Int, Int) -> Void) async {
@@ -214,57 +158,117 @@ final class EmbeddingIndexer {
         onProgress(total, total)
     }
 
-    // MARK: - Chunking
-
-    struct TranscriptChunk {
-        /// First segment in the chunk. Used as the stable id for upsert and as
-        /// the anchor for retrieval-time context expansion.
-        let firstSegmentID: UUID
-        /// Plain conversation text shown in the UI / sent to the LLM.
-        let displayText: String
-        /// Text actually fed to the embedding model — includes a meeting-title
-        /// prefix so topic words are present even in short chunks.
-        let embeddingText: String
+    static func buildTranscriptChunks(segments: [TranscriptSegment], meetingTitle: String) -> [EmbeddingTranscriptChunk] {
+        embeddingTranscriptChunks(segments: segments, meetingTitle: meetingTitle)
     }
+}
 
-    /// Target ~paragraph size. NLEmbedding handles a few hundred chars well;
-    /// going much larger dilutes the vector and hurts top-k recall.
-    private static let chunkTargetChars = 600
-    /// One-segment overlap so a topic that spans a chunk boundary still has
-    /// at least one chunk containing both sides of the transition.
-    private static let chunkOverlapSegments = 1
+/// Value copy of one meeting so indexing can leave the main store.
+struct EmbeddingIndexPayload: Sendable {
+    let id: UUID
+    let title: String
+    let date: Date
+    let chunks: [EmbeddingTranscriptChunk]
+    let actionItems: [EmbeddingActionSnapshot]
+    let insights: [EmbeddingInsightSnapshot]
+    let screenFrames: [EmbeddingFrameSnapshot]
+    let sessionSummaries: [EmbeddingSessionSummarySnapshot]
 
-    static func buildTranscriptChunks(segments: [TranscriptSegment], meetingTitle: String) -> [TranscriptChunk] {
-        let sorted = segments.sorted { $0.startTime < $1.startTime }
-        guard !sorted.isEmpty else { return [] }
-
-        var chunks: [TranscriptChunk] = []
-        var i = 0
-        while i < sorted.count {
-            var lines: [String] = []
-            var charCount = 0
-            var j = i
-            while j < sorted.count {
-                let seg = sorted[j]
-                let text = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { j += 1; continue }
-                let line = "\(seg.speaker.displayName): \(text)"
-                lines.append(line)
-                charCount += line.count
-                j += 1
-                if charCount >= chunkTargetChars { break }
-            }
-            guard !lines.isEmpty else { break }
-            let display = lines.joined(separator: "\n")
-            let embedding = "Meeting: \(meetingTitle)\n\(display)"
-            chunks.append(TranscriptChunk(
-                firstSegmentID: sorted[i].id,
-                displayText: display,
-                embeddingText: embedding
-            ))
-            if j >= sorted.count { break }
-            i = max(j - chunkOverlapSegments, i + 1)
+    init(meeting: Meeting) {
+        self.id = meeting.id
+        self.title = meeting.title
+        self.date = meeting.date
+        self.chunks = embeddingTranscriptChunks(segments: meeting.segments, meetingTitle: meeting.title)
+        self.actionItems = meeting.actionItems.map { item in
+            let text = item.assignee.map { "\(item.text) (assigned: \($0))" } ?? item.text
+            return EmbeddingActionSnapshot(id: item.id, text: text)
         }
-        return chunks
+        self.insights = meeting.insights.map {
+            EmbeddingInsightSnapshot(id: $0.id, summary: $0.summary, followUpQuestions: $0.followUpQuestions)
+        }
+        self.screenFrames = meeting.screenFrames.map {
+            EmbeddingFrameSnapshot(id: $0.id, observation: $0.observation, ocrText: $0.ocrText)
+        }
+        self.sessionSummaries = meeting.sessionSummaries.map {
+            EmbeddingSessionSummarySnapshot(sessionID: $0.sessionID, narrative: $0.narrative)
+        }
     }
+
+    static func load(id: UUID, container: ModelContainer) -> EmbeddingIndexPayload? {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let target = id
+        var descriptor = FetchDescriptor<Meeting>(predicate: #Predicate { $0.id == target })
+        descriptor.fetchLimit = 1
+        guard let meeting = try? context.fetch(descriptor).first else { return nil }
+        guard meeting.status == .completed else { return nil }
+        guard meeting.reProcessingState == nil else { return nil }
+        guard !meeting.segments.isEmpty else { return nil }
+        return EmbeddingIndexPayload(meeting: meeting)
+    }
+}
+
+struct EmbeddingTranscriptChunk: Sendable {
+    let firstSegmentID: UUID
+    let displayText: String
+    let embeddingText: String
+}
+
+struct EmbeddingSessionSummarySnapshot: Sendable {
+    let sessionID: UUID
+    let narrative: String
+}
+
+struct EmbeddingFrameSnapshot: Sendable {
+    let id: UUID
+    let observation: String?
+    let ocrText: String?
+}
+
+struct EmbeddingActionSnapshot: Sendable {
+    let id: UUID
+    let text: String
+}
+
+struct EmbeddingInsightSnapshot: Sendable {
+    let id: UUID
+    let summary: String
+    let followUpQuestions: [String]
+}
+
+private let embeddingChunkTargetChars = 600
+private let embeddingChunkOverlapSegments = 1
+
+private func embeddingTranscriptChunks(segments: [TranscriptSegment], meetingTitle: String) -> [EmbeddingTranscriptChunk] {
+    let sorted = segments.sorted { $0.startTime < $1.startTime }
+    guard !sorted.isEmpty else { return [] }
+
+    var chunks: [EmbeddingTranscriptChunk] = []
+    var i = 0
+    while i < sorted.count {
+        var lines: [String] = []
+        var charCount = 0
+        var j = i
+        while j < sorted.count {
+            let seg = sorted[j]
+            let text = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { j += 1; continue }
+            let line = "\(seg.speaker.displayName): \(text)"
+            lines.append(line)
+            charCount += line.count
+            j += 1
+            if charCount >= embeddingChunkTargetChars { break }
+        }
+        guard !lines.isEmpty else { break }
+        let display = lines.joined(separator: "\n")
+        let embedding = "Meeting: \(meetingTitle)\n\(display)"
+        chunks.append(EmbeddingTranscriptChunk(
+            firstSegmentID: sorted[i].id,
+            displayText: display,
+            embeddingText: embedding
+        ))
+        if j >= sorted.count { break }
+        i = max(j - embeddingChunkOverlapSegments, i + 1)
+    }
+    return chunks
 }

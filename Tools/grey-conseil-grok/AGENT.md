@@ -38,7 +38,7 @@ Rules:
 6. The archive is the full library, not only recent meetings.
 
 Examples:
-- “What did Jordan say about 25MW?” → search_meetings query 25 megawatts speaker Jordan → get_transcript on the hit.
+- “What did Jordan say about twelve pages?” → search_meetings query twelve pages speaker Jordan → get_transcript on the hit.
 - “Exec series last month” → list_meetings series Exec series with since/until.
 - “What’s on me from meetings?” → get_actions assignee Alex.
 

@@ -11,15 +11,15 @@ final class DossierTests: XCTestCase {
 
     func testFilterActionsByAudience() {
         let items = [
-            DossierAction(text: "Fix the ROM", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the ROM"),
-            DossierAction(text: "Send drawings", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the drawings"),
+            DossierAction(text: "Fix the draft", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the draft"),
+            DossierAction(text: "Send the notes", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the notes"),
             DossierAction(text: "Unowned", assignee: nil, isCompleted: false, sourceQuote: nil),
         ]
         let mine = DossierFacts.filterActions(items, audience: .me, myLabels: ["Alex", "Me"])
-        XCTAssertEqual(mine.map(\.text), ["Fix the ROM", "Unowned"])
+        XCTAssertEqual(mine.map(\.text), ["Fix the draft", "Unowned"])
 
         let jordan = DossierFacts.filterActions(items, audience: .person("Jordan"), myLabels: ["Alex"])
-        XCTAssertEqual(jordan.map(\.text), ["Send drawings"])
+        XCTAssertEqual(jordan.map(\.text), ["Send the notes"])
 
         let boss = DossierFacts.filterActions(items, audience: .boss, myLabels: ["Alex"])
         XCTAssertEqual(boss.count, 3)
@@ -42,7 +42,7 @@ final class DossierTests: XCTestCase {
         XCTAssertTrue(lower.contains("do not hallucinate"))
         XCTAssertTrue(lower.contains("do not invent"))
         XCTAssertTrue(lower.contains("meeting.json"))
-        XCTAssertTrue(prompt.contains("Align prospect docs"))
+        XCTAssertTrue(prompt.contains("Align project docs"))
         XCTAssertFalse(prompt.contains("financing status unless"))
 
         let json = try DossierPromptPackage.jsonData(
@@ -52,8 +52,8 @@ final class DossierTests: XCTestCase {
         )
         let text = String(data: json, encoding: .utf8)!
         XCTAssertTrue(text.contains("do_not_invent"))
-        XCTAssertTrue(text.contains("Fix the ROM"))
-        XCTAssertTrue(text.contains("I'll update the ROM"))
+        XCTAssertTrue(text.contains("Fix the draft"))
+        XCTAssertTrue(text.contains("I'll update the draft"))
         XCTAssertFalse(text.contains("First Nations"))
         XCTAssertFalse(text.contains("\"transcript\""))
     }
@@ -67,8 +67,8 @@ final class DossierTests: XCTestCase {
             includeTranscript: false
         )
         let md = DossierRenderer.markdown(blocks)
-        XCTAssertTrue(md.contains("Send drawings"))
-        XCTAssertFalse(md.contains("Fix the ROM"))
+        XCTAssertTrue(md.contains("Send the notes"))
+        XCTAssertFalse(md.contains("Fix the draft"))
         XCTAssertTrue(md.contains("does not add facts"))
         XCTAssertFalse(md.contains("environmental"))
     }
@@ -88,10 +88,10 @@ final class DossierTests: XCTestCase {
         let series = UUID()
         let a = Meeting(title: "Call 1")
         a.seriesID = series
-        a.seriesTitle = "North Campus"
+        a.seriesTitle = "Weekly Series"
         let b = Meeting(title: "Call 2")
         b.seriesID = series
-        b.seriesTitle = "North Campus"
+        b.seriesTitle = "Weekly Series"
         let other = Meeting(title: "Unrelated")
         context.insert(a)
         context.insert(b)
@@ -103,8 +103,8 @@ final class DossierTests: XCTestCase {
     private func sampleSnapshot() -> DossierMeetingSnapshot {
         DossierMeetingSnapshot(
             id: UUID(),
-            title: "North Campus Engineering Scope Review",
-            generatedTitle: "Align prospect docs",
+            title: "Weekly Project Review",
+            generatedTitle: "Align project docs",
             date: Date(timeIntervalSince1970: 1_787_000_000),
             durationLabel: "47m",
             durationMinutes: 47,
@@ -112,18 +112,18 @@ final class DossierTests: XCTestCase {
             speakers: ["Alex", "Jordan"],
             myLabels: ["Alex", "Me"],
             summaryJSON: """
-            [{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"ROM","detail":"Update numbers Jordan voiced."}]}]
+            [{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"Draft","detail":"Update numbers Jordan voiced."}]}]
             """,
             actionItems: [
-                DossierAction(text: "Fix the ROM", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the ROM"),
-                DossierAction(text: "Send drawings", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the drawings"),
+                DossierAction(text: "Fix the draft", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the draft"),
+                DossierAction(text: "Send the notes", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the notes"),
             ],
-            followUps: ["Does the write-up use Jordan's 25MW figure?"],
-            topics: ["prospect documents", "ROM"],
+            followUps: ["Does the write-up use Jordan's twelve-page figure?"],
+            topics: ["project documents", "draft"],
             shareNarratives: [],
             transcript: [
-                DossierLine(speaker: "Jordan", timestamp: "0:12", text: "It is 25 megawatts not 40.", isMe: false),
-                DossierLine(speaker: "Alex", timestamp: "0:20", text: "I'll update the ROM.", isMe: true),
+                DossierLine(speaker: "Jordan", timestamp: "0:12", text: "It is twelve pages not forty.", isMe: false),
+                DossierLine(speaker: "Alex", timestamp: "0:20", text: "I'll update the draft.", isMe: true),
             ]
         )
     }

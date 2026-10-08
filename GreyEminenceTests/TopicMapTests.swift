@@ -79,7 +79,7 @@ final class TopicMapTests: XCTestCase {
         // Labels only — empty meeting lists are ignored.
         let ranked = TopicMapRoster.topTopics(
             meetingIDs: [],
-            topicMeetings: ["Budget": [], "Site B": []],
+            topicMeetings: ["Budget": [], "Track B": []],
             limit: 3
         )
         XCTAssertTrue(ranked.isEmpty)

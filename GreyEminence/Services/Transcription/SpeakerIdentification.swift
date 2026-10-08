@@ -121,10 +121,14 @@ enum SpeakerIdentification {
             )
         }
 
+        var attendeeIDs = Set(meeting.presentAttendees.map(\.id))
+        if let me = Meeting.storedMyContactID {
+            attendeeIDs.insert(me)
+        }
         let resolutions = resolve(
             clusters: clusters,
-            attendeeIDs: Set(meeting.presentAttendees.map(\.id)),
-            profiles: VoiceProfileStore.load()
+            attendeeIDs: attendeeIDs,
+            profiles: VoiceProfileStore.mergedProfiles(contacts: meeting.attendees)
         )
         for resolution in resolutions where resolution.identified != nil {
             LogManager.send(

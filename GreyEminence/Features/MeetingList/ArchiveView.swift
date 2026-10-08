@@ -2,8 +2,8 @@ import SwiftUI
 import SwiftData
 
 /// Full meeting library for extract, and a place to file meetings away from
-/// the recent list. The Meetings sidebar stays the last three months minus
-/// anything filed here.
+/// the recent list. The Meetings sidebar stays the last two weeks minus
+/// anything filed here; Find and Archive open older sessions.
 struct ArchiveView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Meeting.date, order: .reverse) private var allMeetings: [Meeting]
@@ -156,7 +156,7 @@ struct ArchiveView: View {
                     ContentUnavailableView(
                         "No meetings yet",
                         systemImage: "archivebox",
-                        description: Text("Every recording shows up here so you can extract it. File any meeting away from the recent Meetings list without waiting three months.")
+                        description: Text("Every recording shows up here so you can extract it. File any meeting away from the recent Meetings list without waiting for the two-week window to age out.")
                     )
                 } else if filteredMeetings.isEmpty {
                     ContentUnavailableView(
@@ -347,9 +347,8 @@ struct ArchiveView: View {
                                         } label: {
                                             Label("Put Back on Meetings", systemImage: "tray.and.arrow.up")
                                         }
-                                        .disabled(meeting.date < cutoffDate)
                                         .help(meeting.date < cutoffDate
-                                              ? "Older than three months — it stays in Archive."
+                                              ? "Unfile this meeting. It is older than two weeks — on Meetings, choose Show last 90 days or Show all meetings to see it."
                                               : "Show this meeting on the recent Meetings list again.")
                                     } else {
                                         Button {

@@ -516,7 +516,7 @@ enum DualTrackOverlap {
     }
 
     /// Leftovers, Talk-over, and Me can be moved by dual-track energy.
-    /// "Josh" stays Josh even if the microphone also heard him.
+    /// "Bob" stays Bob even if the microphone also heard him.
     static func isOpenLabel(_ speaker: Speaker) -> Bool {
         speaker.isMe || speaker.isGuestPlaceholder
     }
@@ -684,7 +684,7 @@ enum VoicePrintCollectionCodec {
 }
 
 /// When a new in-session print is assigned to someone, drop samples on other
-/// contacts that are actually this same voice (the usual Me-was-Robert case).
+/// contacts that are actually this same voice (the usual Me-was-Bob case).
 enum VoicePrintIsolation {
     static func isolate(
         _ embedding: [Float],

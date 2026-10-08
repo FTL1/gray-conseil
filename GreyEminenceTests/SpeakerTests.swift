@@ -58,10 +58,10 @@ final class SpeakerTests: XCTestCase {
     }
 
     func testAssignedUnseatsAMeLine() {
-        XCTAssertEqual(Speaker.assigned(from: .me, displayName: "Robert"), .other("Robert"))
-        XCTAssertEqual(Speaker.assigned(from: .meNamed("Clay"), displayName: "Josh"), .other("Josh"))
+        XCTAssertEqual(Speaker.assigned(from: .me, displayName: "Pat"), .other("Pat"))
+        XCTAssertEqual(Speaker.assigned(from: .meNamed("Jane"), displayName: "Bob"), .other("Bob"))
         XCTAssertEqual(Speaker.assigned(from: .me, displayName: "me"), .me)
-        XCTAssertEqual(Speaker.assigned(from: .other("speaker-1"), displayName: "Josh"), .other("Josh"))
+        XCTAssertEqual(Speaker.assigned(from: .other("speaker-1"), displayName: "Bob"), .other("Bob"))
         XCTAssertEqual(Speaker.assigned(from: .other("speaker-1"), displayName: "  "), .other("speaker-1"))
     }
 
@@ -169,6 +169,89 @@ final class SpeakerTests: XCTestCase {
             return XCTFail("expected remaining Me segment")
         }
         XCTAssertTrue(kept.speaker.isMe)
+    }
+
+    func testRowRefsAreCompactAndStableAcrossUnrelatedHide() {
+        let alice = TranscriptSegment(speaker: .other("Alice"), text: "one", startTime: 0, endTime: 1)
+        let me = TranscriptSegment(speaker: .me, text: "two", startTime: 1, endTime: 2)
+        let bob = TranscriptSegment(speaker: .other("Bob"), text: "three", startTime: 2, endTime: 3)
+        let shown = TranscriptDisplay.rowRefs(
+            from: [alice, me, bob],
+            hiddenSpeakers: [],
+            isolatedSpeaker: nil
+        )
+        XCTAssertEqual(shown.map(\.id), [
+            TranscriptDisplayItem.scrollID(for: alice.id),
+            TranscriptDisplayItem.scrollID(for: me.id),
+            TranscriptDisplayItem.scrollID(for: bob.id)
+        ])
+        XCTAssertEqual(shown[0].segmentID, alice.id)
+        if case .segment = shown[0].kind {} else {
+            XCTFail("expected compact segment UUID, not a full transcript row")
+        }
+
+        let hiddenBob = TranscriptDisplay.rowRefs(
+            from: [alice, me, bob],
+            hiddenSpeakers: [.other("Bob")],
+            isolatedSpeaker: nil
+        )
+        XCTAssertEqual(hiddenBob.count, 3)
+        XCTAssertEqual(hiddenBob[0].id, shown[0].id)
+        XCTAssertEqual(hiddenBob[1].id, shown[1].id)
+        XCTAssertEqual(hiddenBob[2].id, Speaker.other("Bob").identityKey.hideStubID)
+        XCTAssertTrue(hiddenBob[2].id.hasPrefix("hidden:"))
+        XCTAssertNotEqual(hiddenBob[2].id, TranscriptDisplayItem.scrollID(for: bob.id))
+        XCTAssertNotEqual(hiddenBob[2].id, bob.id.uuidString)
+        XCTAssertNil(hiddenBob[2].segmentID)
+    }
+
+    func testCollapsedStubIdentityStaysPutWhenCountGrows() {
+        let alice1 = TranscriptSegment(speaker: .other("Alice"), text: "one", startTime: 0, endTime: 1)
+        let me = TranscriptSegment(speaker: .me, text: "two", startTime: 1, endTime: 2)
+        let alice2 = TranscriptSegment(speaker: .other("Alice"), text: "three", startTime: 2, endTime: 3)
+        let oneHidden = TranscriptDisplay.rowRefs(
+            from: [alice1, me],
+            hiddenSpeakers: [.other("Alice")],
+            isolatedSpeaker: nil
+        )
+        let twoHidden = TranscriptDisplay.rowRefs(
+            from: [alice1, me, alice2],
+            hiddenSpeakers: [.other("Alice")],
+            isolatedSpeaker: nil
+        )
+        XCTAssertEqual(oneHidden[0].id, twoHidden[0].id)
+        XCTAssertEqual(oneHidden[0].id, Speaker.other("Alice").identityKey.hideStubID)
+        XCTAssertEqual(oneHidden[1].id, twoHidden[1].id)
+        XCTAssertNotEqual(oneHidden[0], twoHidden[0])
+        guard case .collapsed(_, let count) = twoHidden[0].kind else {
+            return XCTFail("expected collapsed Alice stub")
+        }
+        XCTAssertEqual(count, 2)
+    }
+
+    func testRowRefsMatchDisplayItemIdentities() {
+        let alice = TranscriptSegment(speaker: .other("Alice"), text: "one", startTime: 0, endTime: 1)
+        let me = TranscriptSegment(speaker: .me, text: "two", startTime: 1, endTime: 2)
+        let bob = TranscriptSegment(speaker: .other("Bob"), text: "three", startTime: 2, endTime: 3)
+        let segments = [alice, me, bob]
+        let items = TranscriptDisplay.items(
+            from: segments,
+            hiddenSpeakers: [.other("Alice")],
+            isolatedSpeaker: nil,
+            searchSpeaker: nil,
+            searchQuery: ""
+        )
+        let refs = TranscriptDisplay.rowRefs(
+            from: segments,
+            hiddenSpeakers: [.other("Alice")],
+            isolatedSpeaker: nil
+        )
+        XCTAssertEqual(refs.map(\.id), items.map(\.id))
+        let names = TranscriptDisplay.uniqueDisplayNames(in: segments)
+        XCTAssertEqual(names.count, 3)
+        XCTAssertTrue(names.contains("Alice"))
+        XCTAssertTrue(names.contains("Bob"))
+        XCTAssertTrue(names.contains(Speaker.me.displayName))
     }
 
     func testJordanMatchesJordanHaleIdentity() {
@@ -326,7 +409,7 @@ final class SpeakerTests: XCTestCase {
         )
         let later = TranscriptSegment(
             speaker: .other("speaker-1"),
-            text: "The ROM is wrong.",
+            text: "The draft is wrong.",
             startTime: 90,
             endTime: 94,
             isFinal: true

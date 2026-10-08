@@ -135,7 +135,7 @@ enum HelpTip: String {
         case .speakerChipHidden:
             "Hidden — their lines are off. Click to show them again."
         case .heardChip:
-            "Unnamed voice (speaker-1…). Click to hide. Right-click → This is Pat to merge onto a person."
+            "Unnamed voice (speaker-1…). After the meeting, Grey Conseil matches leftover voices to saved prints and to “I’m Bob” lines. Right-click → This is Pat to merge onto a person."
         case .lockID:
             "Lock keeps later lines on this person. Unlock if you need to retag."
         case .lockMe:
@@ -156,7 +156,7 @@ enum HelpTip: String {
         case .sidebarRecording:
             "New Recording — start, watch, or resume a capture."
         case .sidebarMeetings:
-            "Recent meetings (about three months), minus anything you filed to Archive."
+            "Recent meetings (the last two weeks), minus anything you filed to Archive. Find and Archive open older sessions."
         case .sidebarArchive:
             "The whole library. Export zip/PDF; file a meeting away from the recent list."
         case .sidebarInterviews:
@@ -243,7 +243,7 @@ enum HelpTip: String {
         case .meetingIndexSearch:
             "Adds this transcript to Ask search. Use if Ask cannot find a meeting you know is here."
         case .libraryFindRegex:
-            "Treat Find text as a regular expression. Example: cabinet.?count"
+            "Treat Find text as a regular expression. Example: page.?count"
         case .tasksMeetingsMenu:
             "Which meetings to pull tasks from. Default is every analyzed meeting."
         case .tasksAssignedMenu:

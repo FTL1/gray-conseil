@@ -89,16 +89,16 @@ final class ArchiveExtractTests: XCTestCase {
             seriesLabel: nil
         )
         let byPath = Dictionary(uniqueKeysWithValues: files)
-        let transcript = byPath["meetings/2026-08-18-north-campus-engineering-scope-review/transcript.md"]
+        let transcript = byPath["meetings/2026-08-18-weekly-project-review/transcript.md"]
             ?? byPath.first { $0.key.hasSuffix("/transcript.md") }?.value
         XCTAssertNotNil(transcript)
         XCTAssertTrue(transcript!.contains("Jordan"))
-        XCTAssertTrue(transcript!.contains("25 megawatts"))
-        XCTAssertFalse(transcript!.contains("I'll update the ROM"))
+        XCTAssertTrue(transcript!.contains("twelve pages"))
+        XCTAssertFalse(transcript!.contains("I'll update the draft"))
 
         let intel = files.first { $0.0.hasSuffix("/intel.md") }?.1 ?? ""
-        XCTAssertTrue(intel.contains("Send drawings"))
-        XCTAssertFalse(intel.contains("Fix the ROM"))
+        XCTAssertTrue(intel.contains("Send the notes"))
+        XCTAssertFalse(intel.contains("Fix the draft"))
     }
 
     func testSplitBySpeakerWritesPerPersonFolders() {
@@ -109,14 +109,14 @@ final class ArchiveExtractTests: XCTestCase {
         let files = ArchiveExtractPlanner.textFiles(
             snapshots: [sampleSnapshot()],
             request: request,
-            seriesLabel: "North Campus"
+            seriesLabel: "Weekly Series"
         )
         let paths = Set(files.map(\.0))
         XCTAssertTrue(paths.contains("speakers/jordan/transcript.md"))
         XCTAssertTrue(paths.contains("speakers/alex/transcript.md"))
         let jordan = files.first { $0.0 == "speakers/jordan/transcript.md" }?.1 ?? ""
-        XCTAssertTrue(jordan.contains("25 megawatts"))
-        XCTAssertFalse(jordan.contains("I'll update the ROM"))
+        XCTAssertTrue(jordan.contains("twelve pages"))
+        XCTAssertFalse(jordan.contains("I'll update the draft"))
     }
 
     func testCombinedTranscriptOnlyWhenSeveralMeetings() {
@@ -197,6 +197,61 @@ final class ArchiveExtractTests: XCTestCase {
         XCTAssertTrue(MeetingLibrary.isOnMeetingsList(meeting, cutoff: cutoff))
     }
 
+    func testRecentCutoffIsFourteenCalendarDays() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: 15))!
+        let cutoff = MeetingLibrary.recentCutoff(now: now, calendar: calendar)
+        let startOfToday = calendar.startOfDay(for: now)
+        XCTAssertEqual(
+            calendar.dateComponents([.day], from: cutoff, to: startOfToday).day,
+            14
+        )
+        let tenDaysAgo = calendar.date(byAdding: .day, value: -10, to: now)!
+        let twentyDaysAgo = calendar.date(byAdding: .day, value: -20, to: now)!
+        let recent = Meeting(title: "Ten days")
+        recent.date = tenDaysAgo
+        let old = Meeting(title: "Twenty days")
+        old.date = twentyDaysAgo
+        XCTAssertTrue(MeetingLibrary.isOnMeetingsList(recent, cutoff: cutoff))
+        XCTAssertFalse(MeetingLibrary.isOnMeetingsList(old, cutoff: cutoff))
+        XCTAssertTrue(MeetingLibrary.isOnMeetingsList(old, cutoff: MeetingLibrary.Horizon.extended.cutoff(now: now, calendar: calendar)))
+        XCTAssertTrue(MeetingLibrary.isOnMeetingsList(old, cutoff: MeetingLibrary.Horizon.allUnarchived.cutoff(now: now, calendar: calendar)))
+    }
+
+    func testListPredicateIsEvaluatedBySwiftData() throws {
+        let context = try makeContext()
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: 12))!
+        let cutoff = MeetingLibrary.recentCutoff(now: now, calendar: calendar)
+
+        let recent = Meeting(title: "Recent")
+        recent.date = now
+        let old = Meeting(title: "Old")
+        old.date = calendar.date(byAdding: .day, value: -20, to: now)!
+        let archived = Meeting(title: "Filed")
+        archived.date = now
+        archived.isArchived = true
+        let interview = Meeting(title: "Interview")
+        interview.date = now
+        interview.isInterviewMeeting = true
+        context.insert(recent)
+        context.insert(old)
+        context.insert(archived)
+        context.insert(interview)
+
+        let windowed = try context.fetch(FetchDescriptor<Meeting>(
+            predicate: MeetingLibrary.listPredicate(cutoff: cutoff)
+        ))
+        XCTAssertEqual(Set(windowed.map(\.title)), ["Recent"])
+
+        let pinned = try context.fetch(FetchDescriptor<Meeting>(
+            predicate: MeetingLibrary.listPredicate(cutoff: cutoff, alsoIncluding: old.id)
+        ))
+        XCTAssertEqual(Set(pinned.map(\.title)), ["Recent", "Old"])
+    }
+
     func testResolveThisGroupDoesNotExpandTheSeries() throws {
         let context = try makeContext()
         let series = UUID()
@@ -231,7 +286,7 @@ final class ArchiveExtractTests: XCTestCase {
         context.insert(meeting)
         let alex = TranscriptSegment(
             speaker: .meNamed("Alex"),
-            text: "I'll update the ROM.",
+            text: "I'll update the draft.",
             startTime: 20,
             endTime: 24,
             isFinal: true
@@ -240,7 +295,7 @@ final class ArchiveExtractTests: XCTestCase {
         meeting.segments.append(alex)
         let jordan = TranscriptSegment(
             speaker: .other("Jordan"),
-            text: "It is 25 megawatts not 40.",
+            text: "It is twelve pages not forty.",
             startTime: 12,
             endTime: 16,
             isFinal: true
@@ -248,9 +303,9 @@ final class ArchiveExtractTests: XCTestCase {
         jordan.meeting = meeting
         meeting.segments.append(jordan)
         let insight = MeetingInsight(
-            summary: #"[{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"ROM","detail":"Update numbers Jordan voiced."}]}]"#,
-            followUpQuestions: ["Does the write-up use Jordan's 25MW figure?"],
-            topics: ["ROM"]
+            summary: #"[{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"Draft","detail":"Update numbers Jordan voiced."}]}]"#,
+            followUpQuestions: ["Does the write-up use Jordan's twelve-page figure?"],
+            topics: ["draft"]
         )
         insight.meeting = meeting
         meeting.insights.append(insight)
@@ -277,10 +332,10 @@ final class ArchiveExtractTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: transcript.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: intel.path))
         let transcriptText = try String(contentsOf: transcript, encoding: .utf8)
-        XCTAssertTrue(transcriptText.contains("I'll update the ROM."))
-        XCTAssertTrue(transcriptText.contains("25 megawatts"))
+        XCTAssertTrue(transcriptText.contains("I'll update the draft."))
+        XCTAssertTrue(transcriptText.contains("twelve pages"))
         let intelText = try String(contentsOf: intel, encoding: .utf8)
-        XCTAssertTrue(intelText.contains("ROM") || intelText.contains("25MW") || intelText.contains("Documents"))
+        XCTAssertTrue(intelText.contains("draft") || intelText.contains("twelve") || intelText.contains("Documents"))
         XCTAssertTrue(intelText.contains("does not add facts"))
     }
 
@@ -325,13 +380,13 @@ final class ArchiveExtractTests: XCTestCase {
     }
 
     private func sampleSnapshot(
-        title: String = "North Campus Engineering Scope Review",
+        title: String = "Weekly Project Review",
         date: Date? = nil
     ) -> DossierMeetingSnapshot {
         DossierMeetingSnapshot(
             id: UUID(),
             title: title,
-            generatedTitle: "Align prospect docs",
+            generatedTitle: "Align project docs",
             date: date ?? self.date(2026, 8, 18),
             durationLabel: "47m",
             durationMinutes: 47,
@@ -339,18 +394,18 @@ final class ArchiveExtractTests: XCTestCase {
             speakers: ["Alex", "Jordan"],
             myLabels: ["Alex", "Me"],
             summaryJSON: """
-            [{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"ROM","detail":"Update numbers Jordan voiced."}]}]
+            [{"title":"Documents","intro":"Alex is correcting outbound scope language.","points":[{"label":"Draft","detail":"Update numbers Jordan voiced."}]}]
             """,
             actionItems: [
-                DossierAction(text: "Fix the ROM", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the ROM"),
-                DossierAction(text: "Send drawings", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the drawings"),
+                DossierAction(text: "Fix the draft", assignee: "Me", isCompleted: false, sourceQuote: "I'll update the draft"),
+                DossierAction(text: "Send the notes", assignee: "Jordan", isCompleted: false, sourceQuote: "I can send the notes"),
             ],
-            followUps: ["Does the write-up use Jordan's 25MW figure?"],
-            topics: ["prospect documents", "ROM"],
+            followUps: ["Does the write-up use Jordan's twelve-page figure?"],
+            topics: ["project documents", "draft"],
             shareNarratives: [],
             transcript: [
-                DossierLine(speaker: "Jordan", timestamp: "0:12", text: "It is 25 megawatts not 40.", isMe: false),
-                DossierLine(speaker: "Alex", timestamp: "0:20", text: "I'll update the ROM.", isMe: true),
+                DossierLine(speaker: "Jordan", timestamp: "0:12", text: "It is twelve pages not forty.", isMe: false),
+                DossierLine(speaker: "Alex", timestamp: "0:20", text: "I'll update the draft.", isMe: true),
             ]
         )
     }

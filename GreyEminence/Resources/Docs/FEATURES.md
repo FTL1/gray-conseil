@@ -38,6 +38,12 @@ This catalog is current through **public.1**.
 
 - **Grok library.** Full archive of stored transcripts and intel for the local Secretary (MCP plugin). Grey Conseil does not organize mail or tasks for Grok; it only exposes what is already stored.
 
+### This build (public.10)
+
+- **Meetings list is the last two weeks.** SwiftData loads that window only. Find and Archive still open older sessions; the list can Show last 90 days or Show all unfiled meetings.
+- **Live recording stays off the UI thread until a chunk is ready.** The transcript is not copied onto the main actor every 200ms; diarization sample buffers accumulate off-main and speaker labels apply once per 15-second chunk.
+- **Speaker ID after the meeting.** Voice prints and “I’m Bob” self-intros run after stop and at launch for recent unnamed remotes. Re-analyze uses both stamp stores.
+
 ### This build (ftl43)
 
 - **Archive Export.** Zip, one PDF (page break per meeting), or one PDF per meeting. Relabeled from Extract.
@@ -164,7 +170,7 @@ Grey Conseil now keeps the last remote name for about twelve seconds, will not r
 | **Rename / Apply** | This meeting. Different remotes stay different people. |
 | **Save as default name** | Only you. |
 | **Set as Me** | This voice is actually the microphone. |
-| **Undo / Revert / Re-analyze speakers** | Undo last remap. Revert original names. Re-analyze: pick who was on the call, match voice stamps, leftovers are listed as snippets you can play, assign (Me first), or append to the previous/next line. |
+| **Undo / Revert / Re-analyze speakers** | Undo last remap. Revert original names. Re-analyze: pick who was on the call, match voice stamps and “I’m Bob” self-introductions against contacts and the calendar, leftovers are listed as snippets you can play, assign (Me first), or append to the previous/next line. |
 
 Rename **before** you reanalyze if you want those names in the summary and the task list.
 

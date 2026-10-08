@@ -18,7 +18,7 @@ Grey Conseil is the meeting library on this Mac. You search it with MCP tools `g
 
 ## How to look things up
 
-- "What did Jordan say about 25MW?" → `search_meetings` query `25 megawatts` speaker `Jordan` → `get_transcript` on the hit.
+- "What did Jordan say about twelve pages?" → `search_meetings` query `twelve pages` speaker `Jordan` → `get_transcript` on the hit.
 - "Exec series last month" → `list_meetings` series `Exec series` with since/until, or `search_meetings` series `Exec series`.
 - "What's on me from meetings?" → `get_actions` assignee `Alex` (or Me).
 - Then Outlook/calendar if the user also wants mail or schedule. Meetings and mail are separate sources; say which one a fact came from.

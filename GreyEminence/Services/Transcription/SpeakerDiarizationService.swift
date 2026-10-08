@@ -504,6 +504,8 @@ enum MeetingSpeakerRecovery {
         var unknownSpeakers: [Speaker]
         var matchedSpeakers: [Speaker]
         var embeddings: [Speaker.IdentityKey: [Float]]
+        var selfIntroChanged: Int = 0
+        var printChanged: Int = 0
     }
 
     /// People the re-analyze sheet can pre-select: you, attendees, named
@@ -598,84 +600,125 @@ enum MeetingSpeakerRecovery {
         return list
     }
 
+    struct AudioDiarization: Sendable {
+        var ranges: [(speaker: Speaker, start: TimeInterval, end: TimeInterval)]
+        var embeddings: [Speaker.IdentityKey: [Float]]
+        var mic: [Float]
+        var system: [Float]
+        var offset: TimeInterval
+        var labeled: [DiarizedSegment]
+    }
+
+    /// Decode both tracks and diarize the system side off the UI thread.
+    static func diarizeRecordedAudio(
+        audioSourceID: UUID,
+        audioStartOffset: TimeInterval,
+        expected: [ExpectedSpeaker]
+    ) async throws -> AudioDiarization {
+        let audioID = audioSourceID
+        let offset = audioStartOffset
+        return try await Task.detached(priority: .utility) {
+            let systemURLs = AudioFileWriter.existingChunkURLs(
+                base: StorageManager.shared.systemAudioURL(for: audioID)
+            )
+            var samples: [Float] = []
+            for url in systemURLs {
+                if let chunk = try? HighQualityTranscriber.decodeFileTo16kFloatMono(url: url) {
+                    samples.append(contentsOf: chunk)
+                }
+            }
+            guard !samples.isEmpty else { throw RecoveryError.noSystemAudio }
+
+            var micSamples: [Float] = []
+            for url in AudioFileWriter.existingChunkURLs(
+                base: StorageManager.shared.micAudioURL(for: audioID)
+            ) {
+                if let chunk = try? HighQualityTranscriber.decodeFileTo16kFloatMono(url: url) {
+                    micSamples.append(contentsOf: chunk)
+                }
+            }
+
+            let service = SpeakerDiarizationService()
+            try await service.prepare()
+            let prints: [(speaker: Speaker, embedding: [Float])] = expected.flatMap { person in
+                person.allEmbeddings().map { (person.speaker, $0) }
+            }
+            if !prints.isEmpty {
+                await service.seedEnrolledPrints(prints, replacingAll: true)
+            }
+            var labeled = try await service.diarizeCompleteFile(
+                samples: samples,
+                unmatchedStyle: .unknown
+            )
+            labeled = OverlapMashup.reassign(
+                turns: labeled,
+                samples: samples,
+                expected: expected
+            )
+            let ranges = labeled.map {
+                (
+                    speaker: $0.speaker,
+                    start: $0.startTime + offset,
+                    end: $0.endTime + offset
+                )
+            }
+            guard !ranges.isEmpty else { throw RecoveryError.noDiarizedSpeech }
+
+            var embeddings: [Speaker.IdentityKey: [Float]] = [:]
+            for item in await service.sessionEmbeddings() {
+                embeddings[item.speaker.identityKey] = item.embedding
+            }
+            return AudioDiarization(
+                ranges: ranges,
+                embeddings: embeddings,
+                mic: micSamples,
+                system: samples,
+                offset: offset,
+                labeled: labeled
+            )
+        }.value
+    }
+
     /// Relabel transcript lines from system audio. Seeded stamps (the full
     /// collection per person, including in-session captures) are matched
     /// first; leftovers become Talk-over or speaker-N. Named remotes stay
     /// named when the mic also heard them. Lines currently labeled Me are
     /// included so a remote voice that was stamped as you can be corrected.
+    /// After the audio pass, self-introductions and stored voice prints name
+    /// whoever is still speaker-N.
     @MainActor
     static func recover(
         meeting: Meeting,
-        expected: [ExpectedSpeaker] = []
+        expected: [ExpectedSpeaker] = [],
+        contacts: [Contact] = []
     ) async throws -> Result {
         guard !meeting.segments.isEmpty else { throw RecoveryError.noRemoteSegments }
 
-        let audioID = meeting.audioSourceMeetingID ?? meeting.id
-        let urls = AudioFileWriter.existingChunkURLs(
-            base: StorageManager.shared.systemAudioURL(for: audioID)
-        )
-        var samples: [Float] = []
-        for url in urls {
-            if let chunk = try? HighQualityTranscriber.decodeFileTo16kFloatMono(url: url) {
-                samples.append(contentsOf: chunk)
-            }
-        }
-        guard !samples.isEmpty else { throw RecoveryError.noSystemAudio }
-
-        var micSamples: [Float] = []
-        for url in AudioFileWriter.existingChunkURLs(
-            base: StorageManager.shared.micAudioURL(for: audioID)
-        ) {
-            if let chunk = try? HighQualityTranscriber.decodeFileTo16kFloatMono(url: url) {
-                micSamples.append(contentsOf: chunk)
-            }
-        }
-
-        let service = SpeakerDiarizationService()
-        try await service.prepare()
-        let prints: [(speaker: Speaker, embedding: [Float])] = expected.flatMap { person in
-            person.allEmbeddings().map { (person.speaker, $0) }
-        }
-        if !prints.isEmpty {
-            await service.seedEnrolledPrints(prints, replacingAll: true)
-        }
-        var labeled = try await service.diarizeCompleteFile(
-            samples: samples,
-            unmatchedStyle: .unknown
-        )
-        labeled = OverlapMashup.reassign(
-            turns: labeled,
-            samples: samples,
+        let pass = try await diarizeRecordedAudio(
+            audioSourceID: meeting.audioSourceMeetingID ?? meeting.id,
+            audioStartOffset: meeting.audioStartOffset,
             expected: expected
         )
-        let offset = meeting.audioStartOffset
-        let ranges = labeled.map {
-            (
-                speaker: $0.speaker,
-                start: $0.startTime + offset,
-                end: $0.endTime + offset
-            )
-        }
-        guard !ranges.isEmpty else { throw RecoveryError.noDiarizedSpeech }
+        persistClusters(pass.labeled, meetingID: meeting.id)
 
         let me = expected.first(where: \.isMe)?.speaker ?? Speaker.resolvedMe()
         let remotes = expected.filter { !$0.isMe }.map(\.speaker)
-        let systemHasSpeech = DualTrackOverlap.trackHasSpeech(samples)
+        let systemHasSpeech = DualTrackOverlap.trackHasSpeech(pass.system)
         var changed = 0
         var used: [Speaker] = []
         for segment in meeting.segments {
             guard let proposed = SpeakerOverlapAssigner.speaker(
                 forStart: segment.startTime,
                 end: segment.endTime,
-                in: ranges
+                in: pass.ranges
             ) else { continue }
             let speaker = DualTrackOverlap.resolve(
                 proposed: proposed,
                 start: segment.startTime,
                 end: segment.endTime,
-                offset: offset,
-                mic: micSamples,
-                system: samples,
+                offset: pass.offset,
+                mic: pass.mic,
+                system: pass.system,
                 me: me,
                 remotes: remotes,
                 systemHasSpeech: systemHasSpeech
@@ -693,18 +736,73 @@ enum MeetingSpeakerRecovery {
             }
         }
 
-        var embeddings: [Speaker.IdentityKey: [Float]] = [:]
-        for item in await service.sessionEmbeddings() {
-            embeddings[item.speaker.identityKey] = item.embedding
+        let roster = contacts.isEmpty ? meeting.attendees : contacts
+        let keysBeforeIdentity = Dictionary(
+            uniqueKeysWithValues: meeting.segments.map { ($0.id, $0.speaker.identityKey) }
+        )
+        let identities = SpeakerIdentityPass.applyIdentities(
+            meeting: meeting,
+            contacts: roster,
+            embeddings: pass.embeddings,
+            printContactIDs: SpeakerIdentityPass.allowedPrintIDs(
+                expected: expected,
+                meeting: meeting
+            )
+        )
+        changed += identities.selfIntroChanged + identities.printChanged
+
+        var embeddings = pass.embeddings
+        for segment in meeting.segments {
+            if embeddings[segment.speaker.identityKey] == nil,
+               let fromUnknown = used.first(where: { $0.matchesIdentity(segment.speaker) }) {
+                embeddings[segment.speaker.identityKey] = embeddings[fromUnknown.identityKey]
+            }
+            if embeddings[segment.speaker.identityKey] == nil,
+               let oldKey = keysBeforeIdentity[segment.id] {
+                embeddings[segment.speaker.identityKey] = embeddings[oldKey]
+            }
         }
 
-        let unknown = used.filter { $0.isGuestPlaceholder }
-        let matched = used.filter { !$0.isGuestPlaceholder }
+        let leftover = meeting.segments.map(\.speaker).filter(\.isGuestPlaceholder)
+        var unknown: [Speaker] = []
+        for speaker in leftover where !unknown.contains(where: { $0.matchesIdentity(speaker) }) {
+            unknown.append(speaker)
+        }
+        var matched: [Speaker] = []
+        for speaker in meeting.segments.map(\.speaker) where !speaker.isGuestPlaceholder {
+            if !matched.contains(where: { $0.matchesIdentity(speaker) }) {
+                matched.append(speaker)
+            }
+        }
         return Result(
             changed: changed,
             unknownSpeakers: unknown,
             matchedSpeakers: matched,
-            embeddings: embeddings
+            embeddings: embeddings,
+            selfIntroChanged: identities.selfIntroChanged,
+            printChanged: identities.printChanged
+        )
+    }
+
+    private static func persistClusters(_ labeled: [DiarizedSegment], meetingID: UUID) {
+        let spans = labeled.map {
+            SpeakerAlignment.Span(speakerID: $0.speakerID, start: $0.startTime, end: $0.endTime)
+        }
+        let significant = SpeakerAlignment.significantSpeakerIDs(in: spans)
+        guard !significant.isEmpty else { return }
+        let usable = spans.filter { significant.contains($0.speakerID) }
+        let labels = SpeakerAlignment.labels(forSpansOrderedByTime: usable)
+        let clusters = SpeakerIdentification.clusters(
+            from: labeled,
+            labels: labels,
+            significant: significant
+        )
+        guard !clusters.isEmpty else { return }
+        StorageManager.shared.saveVoiceClusters(
+            MeetingVoiceClusters(clusters: clusters.map {
+                .init(label: $0.label, signature: $0.signature)
+            }),
+            for: meetingID
         )
     }
 

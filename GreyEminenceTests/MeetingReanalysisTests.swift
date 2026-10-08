@@ -89,8 +89,8 @@ final class MeetingReanalysisTests: XCTestCase {
         container.mainContext.insert(meeting)
         XCTAssertEqual(meeting.analysisTitleHint, "Stored name")
 
-        meeting.calendarEventTitle = "North Campus Engineering Scope Review"
-        XCTAssertEqual(meeting.analysisTitleHint, "North Campus Engineering Scope Review")
+        meeting.calendarEventTitle = "Weekly Project Review"
+        XCTAssertEqual(meeting.analysisTitleHint, "Weekly Project Review")
 
         meeting.calendarEventTitle = "   "
         XCTAssertEqual(meeting.analysisTitleHint, "Stored name")
@@ -118,8 +118,8 @@ final class MeetingReanalysisTests: XCTestCase {
         let meeting = Meeting(title: "Meeting 8/27/26")
         container.mainContext.insert(meeting)
         XCTAssertTrue(Meeting.isAutomaticTitle(meeting.title))
-        meeting.applyGeneratedTitle("Align prospect docs with Jordan")
-        XCTAssertEqual(meeting.title, "Align prospect docs with Jordan")
+        meeting.applyGeneratedTitle("Align project docs with Jordan")
+        XCTAssertEqual(meeting.title, "Align project docs with Jordan")
         XCTAssertTrue(meeting.renameDisplayTitle("Q2 budget"))
         meeting.applyGeneratedTitle("A different AI title")
         XCTAssertEqual(meeting.generatedTitle, "A different AI title")
@@ -131,24 +131,24 @@ final class MeetingReanalysisTests: XCTestCase {
             for: Meeting.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
-        let meeting = Meeting(title: "North Campus Engineering Scope Review")
+        let meeting = Meeting(title: "Weekly Project Review")
         meeting.calendarEventID = "evt-1"
-        meeting.calendarEventTitle = "North Campus Engineering Scope Review"
+        meeting.calendarEventTitle = "Weekly Project Review"
         container.mainContext.insert(meeting)
 
-        meeting.applyGeneratedTitle("Align prospect docs with Jordan")
-        XCTAssertEqual(meeting.generatedTitle, "Align prospect docs with Jordan")
-        XCTAssertEqual(meeting.title, "North Campus Engineering Scope Review")
+        meeting.applyGeneratedTitle("Align project docs with Jordan")
+        XCTAssertEqual(meeting.generatedTitle, "Align project docs with Jordan")
+        XCTAssertEqual(meeting.title, "Weekly Project Review")
     }
 
     func testActionSnapshotRoundTrip() {
         let items = [
-            ParsedActionItem(text: "Fix the ROM", assignee: "Me", sourceQuote: nil),
-            ParsedActionItem(text: "Send drawings", assignee: "Jordan", sourceQuote: nil),
+            ParsedActionItem(text: "Fix the draft", assignee: "Me", sourceQuote: nil),
+            ParsedActionItem(text: "Send the notes", assignee: "Jordan", sourceQuote: nil),
         ]
         let json = InsightRevision.encodeActions(items)
         let decoded = InsightRevision.decodeActions(json)
-        XCTAssertEqual(decoded.map(\.text), ["Fix the ROM", "Send drawings"])
+        XCTAssertEqual(decoded.map(\.text), ["Fix the draft", "Send the notes"])
         XCTAssertEqual(decoded.map(\.assignee), ["Me", "Jordan"])
     }
 

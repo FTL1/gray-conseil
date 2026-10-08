@@ -252,7 +252,7 @@ enum ReportExportService {
         return panel.url
     }
 
-    /// "North Campus Engineering Scope Review_20260818-47m-intel.pdf"
+    /// "Weekly Project Review_20260818-47m-intel.pdf"
     nonisolated static func suggestedFilename(
         for meta: ReportModel.Meta,
         template _: ReportTemplate,

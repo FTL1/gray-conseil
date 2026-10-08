@@ -654,7 +654,7 @@ final class ReportRenderingTests: XCTestCase {
     func testSuggestedFilenameUsesMeetingIntelligencePattern() {
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 12))!
         let meta = ReportModel.Meta(
-            title: "North Campus Engineering Scope Review",
+            title: "Weekly Project Review",
             date: date,
             duration: "47:00",
             durationMinutes: 47,
@@ -663,13 +663,13 @@ final class ReportRenderingTests: XCTestCase {
             generatedAt: .now
         )
         let pdf = ReportExportService.suggestedFilename(for: meta, template: ReportTemplateCatalog.plain)
-        XCTAssertEqual(pdf, "North Campus Engineering Scope Review_20260818-47m-intel.pdf")
+        XCTAssertEqual(pdf, "Weekly Project Review_20260818-47m-intel.pdf")
         let csv = ReportExportService.suggestedFilename(
             for: meta,
             template: ReportTemplateCatalog.plain,
             fileExtension: "csv"
         )
-        XCTAssertEqual(csv, "North Campus Engineering Scope Review_20260818-47m-intel.csv")
+        XCTAssertEqual(csv, "Weekly Project Review_20260818-47m-intel.csv")
     }
 
     @MainActor

@@ -44,12 +44,12 @@ final class AIPromptTemplatesTests: XCTestCase {
             calendarTitle: "T",
             myName: "Me",
             suppressedActionItems: ["old task"],
-            suppressedFollowUps: ["Who owns financing?"],
+            suppressedFollowUps: ["Who owns the draft?"],
             suppressedSummaryPoints: ["project overview lots of background"]
         )
         XCTAssertTrue(prompt.contains("DO NOT RE-SUGGEST"))
         XCTAssertTrue(prompt.contains("old task"))
-        XCTAssertTrue(prompt.contains("Who owns financing?"))
+        XCTAssertTrue(prompt.contains("Who owns the draft?"))
         XCTAssertTrue(prompt.contains("project overview lots of background"))
     }
 
@@ -94,15 +94,15 @@ final class AIPromptTemplatesTests: XCTestCase {
     }
 
     func testRelatedContextBlockDoesNotLicenseGenericQuestionnaire() {
-        let block = AIPromptTemplates.relatedContextBlock("- [Other] financing")
+        let block = AIPromptTemplates.relatedContextBlock("- [Other] timelines")
         XCTAssertTrue(block.contains("generic domain questionnaire"))
-        XCTAssertTrue(block.contains("financing"))
+        XCTAssertTrue(block.contains("timelines"))
     }
 
     func testScreenBlockTreatsDocumentsAsWorkProduct() {
-        let block = AIPromptTemplates.screenObservationBlock("PDF of a 25MW warehouse")
+        let block = AIPromptTemplates.screenObservationBlock("PDF of a twelve-page outline")
         XCTAssertTrue(block.lowercased().contains("work product"))
-        XCTAssertTrue(block.contains("PDF of a 25MW warehouse"))
+        XCTAssertTrue(block.contains("PDF of a twelve-page outline"))
     }
 
     func testDeepSectionPromptRewritesOnlyThatSection() {

@@ -76,8 +76,8 @@ final class TranscriptAutoMergeTests: XCTestCase {
 
     func testJoinKeepsLongerWhenIncomingIsShorterPrefix() {
         XCTAssertEqual(
-            TranscriptAutoMerge.joinTexts(["the cabinet count is locked", "the cabinet count"]),
-            "the cabinet count is locked"
+            TranscriptAutoMerge.joinTexts(["the page count is locked", "the page count"]),
+            "the page count is locked"
         )
     }
 
@@ -87,8 +87,8 @@ final class TranscriptAutoMergeTests: XCTestCase {
             line(guest, "If we want to talk about what this update", from: 7, to: 7),
             line(guest, "what the initial scope", from: 10, to: 10),
             line(guest, "the initial scope of this isn't for a particular", from: 12, to: 12),
-            line(guest, "of this isn't for a particular megawatts as much.", from: 14, to: 14),
-            line(guest, "I think it is, within the 100", from: 15, to: 15)
+            line(guest, "of this isn't for a particular page count as much.", from: 14, to: 14),
+            line(guest, "I think it is, within the ten", from: 15, to: 15)
         ]
         let groups = TranscriptAutoMerge.groups(in: segments, maxWindow: 15, pause: 4)
         XCTAssertEqual(groups.count, 1)

@@ -5,14 +5,14 @@ final class TranscriptExportTests: XCTestCase {
     func testFilenameUsesFullTranscriptPattern() {
         let date = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 12))!
         let name = TranscriptExportService.suggestedFilename(
-            title: "North Campus Engineering Scope Review",
+            title: "Weekly Project Review",
             date: date,
             duration: 47 * 60,
             fileExtension: "txt"
         )
         XCTAssertEqual(
             name,
-            "North Campus Engineering Scope Review_20260818-47m-tr.txt"
+            "Weekly Project Review_20260818-47m-tr.txt"
         )
     }
 
@@ -29,7 +29,7 @@ final class TranscriptExportTests: XCTestCase {
     func testPlainTextAndCSVContainSpeakers() {
         let segment = TranscriptSegment(
             speaker: .other("Pat"),
-            text: "First Nations?",
+            text: "Page count?",
             startTime: 243,
             endTime: 248,
             isFinal: true
@@ -43,7 +43,7 @@ final class TranscriptExportTests: XCTestCase {
         )
         XCTAssertTrue(text.contains("Exec series"))
         XCTAssertTrue(text.contains("Pat"))
-        XCTAssertTrue(text.contains("First Nations?"))
+        XCTAssertTrue(text.contains("Page count?"))
 
         let csv = TranscriptExportService.csv(lines: lines)
         XCTAssertTrue(csv.hasPrefix("Timestamp,Speaker,Text"))

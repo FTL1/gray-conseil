@@ -43,13 +43,26 @@ struct SeriesSectionView: View {
     let meeting: Meeting
     let seriesTitle: String
 
-    @Query private var allMeetings: [Meeting]
+    @Query private var seriesMeetings: [Meeting]
 
-    private var seriesMeetings: [Meeting] {
-        guard let seriesID = meeting.seriesID else { return [] }
-        return allMeetings
-            .filter { $0.seriesID == seriesID && $0.id != meeting.id }
-            .sorted { $0.date > $1.date }
+    init(meeting: Meeting, seriesTitle: String) {
+        self.meeting = meeting
+        self.seriesTitle = seriesTitle
+        let currentID = meeting.id
+        if let seriesID = meeting.seriesID {
+            _seriesMeetings = Query(
+                filter: #Predicate<Meeting> { other in
+                    other.seriesID == seriesID && other.id != currentID
+                },
+                sort: \Meeting.date,
+                order: .reverse
+            )
+        } else {
+            let none = UUID()
+            _seriesMeetings = Query(
+                filter: #Predicate<Meeting> { other in other.id == none }
+            )
+        }
     }
 
     var body: some View {

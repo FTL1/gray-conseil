@@ -245,9 +245,9 @@ Click **Pat** in that list to tag this voice as Pat.
 1. Tag the voice first if it is still `guest-N`.
 2. Right-click the badge or the chip → **Save voice print from this meeting**. Leave **Include room and mic character** on if their mic is wet, hissy, or they talk over you.
 3. Wait. The app listens to this meeting’s saved audio (mic and system) on that person’s lines.
-4. The contact now has another print in their collection. People list shows a waveform. The contact card can **Remove all voice prints**.
+4. The contact now has another print in their collection, and the same stamp is stored for offline identification after the meeting. People list shows a waveform. The contact card can **Remove all voice prints**.
 
-**Next meeting:** Grey Conseil loads enrolled prints when recording starts. A matching guest is labeled with that person’s name instead of a new guest-N.
+**Next meeting:** Grey Conseil loads enrolled prints when recording starts. After you stop, a longer out-of-band pass matches leftover speaker-N lines to those prints and to first-person self-introductions. A matching guest is labeled with that person’s name instead of a new guest-N.
 
 **Rules**
 
@@ -272,7 +272,7 @@ Unassigned leftover voices (**Talk-over**, speaker-1, guest-1) stay on so you ca
 
 **Colors:** right-click a name → pick a swatch → **Lock this color**. Alex, Jordan, and Sam keep those colors in later meetings. If two people would share a color, the more common one keeps it.
 
-If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call. Leftover lines use the microphone (you) vs system audio (remote) vs both (**Talk-over**); a name you already assigned stays. Unmatched snippets are listed so you can play them, assign them (Me is first), or append them onto the previous or next line. Play on a line runs at normal speed. Undo and revert are in **⋯**.
+If a remap goes wrong: **Undo speaker change** (last remap), **Revert speaker labels** (original names, text edits stay), or **Re-analyze speakers**. Re-analyze opens a sheet: tick who was actually on the call. It matches saved voice prints and first-person lines (“I’m Bob”) against contacts and calendar invitees. Leftover lines use the microphone (you) vs system audio (remote) vs both (**Talk-over**); a name you already assigned stays. Unmatched snippets are listed so you can play them, assign them (Me is first), or append them onto the previous or next line. Play on a line runs at normal speed. Undo and revert are in **⋯**.
 
 ### Right-click a speaker name
 
@@ -323,7 +323,7 @@ If an old recording still lumped everyone, use **Recover guest-1, guest-2… fro
 2. Click **Transcript** to save in the last format you used (default is Plain Text).
 3. Use the arrow to pick **Plain Text**, **Markdown**, **RTF**, **CSV**, **Excel**, or **PDF**, or **Copy Full Transcript**.
 
-Suggested name: `North Campus Engineering Scope Review_20260818-47m-tr.txt`
+Suggested name: `Weekly Project Review_20260818-47m-tr.txt`
 
 Hidden/isolated filters in the window do **not** change the file.
 
@@ -355,7 +355,7 @@ Below the dossier items, the older single-file dump is unchanged:
 2. Optionally tick **Raw transcript**. **De-dupe transcript** stays on unless you turn it off.
 3. Pick **PDF**, **Word (.docx)**, **Excel**, **CSV**, **JSON**, **RTF**, or **Markdown**.
 
-Suggested name: `North Campus Engineering Scope Review_20260818-47m-intel.pdf` (same stem for the other types).
+Suggested name: `Weekly Project Review_20260818-47m-intel.pdf` (same stem for the other types).
 
 ---
 
@@ -373,9 +373,9 @@ Suggested name: `North Campus Engineering Scope Review_20260818-47m-intel.pdf` (
 
 The section title shows a count, for example **Exec series (5)**. Archive uses the same Group menu (Date there still means quarters).
 
-**Archive is the whole library**, not only meetings older than three months. The recent **Meetings** list stays the last three months so it stays scannable.
+**Archive is the whole library**, not only meetings older than two weeks. The recent **Meetings** list stays the last two weeks so it stays scannable. **Show last 90 days** or **Show all meetings** at the bottom of the list, plus **Find** (⇧⌘F), open older sessions.
 
-**File a meeting away.** Right-click → **Archive Meeting**, or select several and **Archive** on the bar. It leaves the recent list immediately and stays in Archive for export. **Put Back on Meetings** restores it if it is still in the three-month window. The **Filed away** chip in Archive shows only those.
+**File a meeting away.** Right-click → **Archive Meeting**, or select several and **Archive** on the bar. It leaves the recent list immediately and stays in Archive for export. **Put Back on Meetings** restores it; if it is older than two weeks, expand the Meetings list to see it. The **Filed away** chip in Archive shows only those.
 
 ### Export transcripts and intel
 
@@ -408,7 +408,7 @@ Zip has `index.md`, combined `transcript.md` / `intel.md` when there is more tha
 
 **What it is.** AI analysis writes the suggested title, summary, follow-up questions, topics, and action items. You can run it again after you rename speakers, switch to Grok, raise the timeout, or when a pass failed — including when the first write-up summarized the **subject** (a PDF, a calendar name) instead of **what you were trying to get done**.
 
-Reanalyze uses whatever provider is selected in **Settings → AI** right now. It throws away the previous summary, questions, and topics and writes them again from the full transcript. It infers your purpose first: fixing documents you send to prospects so they match what someone actually said is the meeting, not a generic engineering review. Calendar-linked names in the list stay as the event; the intelligence pane shows the AI purpose title when it differs. Tasks you already completed, dated, or assigned are kept; untouched suggested tasks are replaced.
+Reanalyze uses whatever provider is selected in **Settings → AI** right now. It throws away the previous summary, questions, and topics and writes them again from the full transcript. It infers your purpose first: fixing documents so they match what someone actually said is the meeting, not a generic subject-matter review. Calendar-linked names in the list stay as the event; the intelligence pane shows the AI purpose title when it differs. Tasks you already completed, dated, or assigned are kept; untouched suggested tasks are replaced.
 
 If you customized prompts under **Settings → Developer → Edit AI Prompts**, use **Restore All Defaults** so these purpose-first rules apply.
 
@@ -602,7 +602,7 @@ Recent meeting rows still open that meeting. The short pending-action list under
 
 ## 12. Topic map: topics, people, speakers, and actions
 
-**What it is.** **Topic Map** is still a map of **themes** from analyzed meetings (North Campus, Site B, hiring, and so on). Grey Conseil adds **who was there**, **who talked**, and **what was assigned**.
+**What it is.** **Topic Map** is still a map of **themes** from analyzed meetings (kickoff, hiring, and so on). Grey Conseil adds **who was there**, **who talked**, and **what was assigned**.
 
 The dots stay topics. People and speakers are a way to **light up** the topics they belong to.
 
@@ -704,7 +704,7 @@ There is no extra shortcut for Tasks Find or Topic Map. Use the sidebar.
 
 - **⌘F** searches the **open meeting** from the header field. Tick **Transcript** to highlight and jump lines in the inspector. **⌘G** / **⇧⌘G** walk transcript hits.
 - **Find** (sidebar, toolbar magnifying glass, **⇧⌘F**) is library search in the **main pane**. Type text (optional **Regex**). Filter by **meeting name**, **speaker** (Me, Jordan, …), and **from / to date**. Tick **Transcript** and/or **Intelligence**. Pick **This meeting**, **Selected meetings**, or **All meetings**. Click a result to open that meeting; transcript hits jump to the line.
-- **Ask** is the AI question box (“What did we say about cabinets?”). It needs indexed meetings.
+- **Ask** is the AI question box (“What did we say about pages?”). It needs indexed meetings.
 - Right-click a speaker → **Find in their lines** still searches only that person in the current transcript.
 
 ---

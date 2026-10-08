@@ -34,9 +34,9 @@ final class SpeakerRoster {
     var isolatedSpeaker: Speaker?
     /// Mixer: hidden speakers stay in the meeting but their lines are off.
     var hiddenSpeakers: [Speaker] = []
-    /// Bumped on hide / show / isolate so the transcript LazyVStack is a new
-    /// view. Mixed UUID/String row ids were recycling the first snippet of
-    /// each speaker (Alex at 0:00, first guest-1, first guest-2).
+    /// Bumped on hide / show / isolate so cached transcript row-refs rebuild.
+    /// Do not put this on a SwiftUI `.id` — that throws every row away.
+    /// Row ids stay `segment:<uuid>` / `hidden:<key>` (never mixed UUID/String).
     var mixerGeneration: Int = 0
 
     private func bumpMixer() {
@@ -350,7 +350,7 @@ final class SpeakerRoster {
     }
 
     /// Speaker to persist when the user picks a person. A remote pick
-    /// (Josh, a contact) never folds onto the Me seat, even when first
+    /// (Bob, a contact) never folds onto the Me seat, even when first
     /// names collide.
     func speakerToApply(_ requested: Speaker) -> Speaker {
         if requested.isMe { return Speaker.resolvedMe() }
@@ -371,7 +371,7 @@ final class SpeakerRoster {
     /// Bind `old` onto `new`’s seat and drop `old` from the hide list without
     /// hiding the destination (guest-1 → Jordan must not grey Jordan).
     /// Me never folds onto a remote seat — tagging one of your lines as
-    /// Josh must not make the Josh chip also mean you.
+    /// Bob must not make the Bob chip also mean you.
     func adopt(from old: Speaker, onto new: Speaker, in segments: [TranscriptSegment]) {
         let target = canonicalSpeaker(matching: new) ?? new
         if old.isMe, !target.isMe {
@@ -444,8 +444,8 @@ final class SpeakerRoster {
             let canonical = liveSeat(seat).speaker
             if speaker != canonical {
                 if seat.isMe {
-                    // Exact Me name only. First-token samePerson ("Clay" /
-                    // "Clayton") must not steal a contact the user just assigned.
+                    // Exact Me name only. First-token samePerson ("Jane" /
+                    // "Janet") must not steal a contact the user just assigned.
                     let meNames = ([seat.name, canonical.displayName, SpeakerNames.effectiveMeName] as [String?])
                         .compactMap { $0 }
                     let exactMe = meNames.contains {

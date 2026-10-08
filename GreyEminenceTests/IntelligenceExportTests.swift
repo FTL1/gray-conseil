@@ -5,7 +5,7 @@ final class IntelligenceExportTests: XCTestCase {
     private func sampleReport(includeTranscript: Bool = true) -> ReportModel {
         ReportModel(
             meta: .init(
-                title: "North Campus Engineering Scope Review",
+                title: "Weekly Project Review",
                 date: Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 12))!,
                 duration: "47m",
                 durationMinutes: 47,
@@ -17,14 +17,14 @@ final class IntelligenceExportTests: XCTestCase {
                 .init(
                     id: 0,
                     title: "Scope",
-                    intro: "Campus engineering.",
+                    intro: "Project planning.",
                     points: [.init(label: "Budget", detail: "Hold the line.")],
                     figures: []
                 )
             ],
-            actionItems: [.init(text: "Send drawings", assignee: "Pat", isCompleted: false)],
-            followUpQuestions: ["Who owns commissioning?"],
-            topics: ["North Campus"],
+            actionItems: [.init(text: "Send the notes", assignee: "Pat", isCompleted: false)],
+            followUpQuestions: ["Who owns the draft?"],
+            topics: ["Weekly Series"],
             shareSessions: [],
             transcript: includeTranscript
                 ? [.init(speaker: "Alex", formattedTimestamp: "0:12", text: "Let's start.")]
@@ -43,7 +43,7 @@ final class IntelligenceExportTests: XCTestCase {
         let filtered = selection.applying(to: sampleReport())
         XCTAssertTrue(filtered.sections.isEmpty)
         XCTAssertTrue(filtered.actionItems.isEmpty)
-        XCTAssertEqual(filtered.followUpQuestions, ["Who owns commissioning?"])
+        XCTAssertEqual(filtered.followUpQuestions, ["Who owns the draft?"])
         XCTAssertTrue(filtered.topics.isEmpty)
         XCTAssertEqual(filtered.transcript.count, 1)
         XCTAssertFalse(filtered.isEmpty)
@@ -62,14 +62,14 @@ final class IntelligenceExportTests: XCTestCase {
     func testMarkdownAndCSVIncludeSelectedContent() {
         let report = sampleReport()
         let md = IntelligenceExport.markdown(report)
-        XCTAssertTrue(md.contains("# North Campus Engineering Scope Review"))
-        XCTAssertTrue(md.contains("Send drawings"))
+        XCTAssertTrue(md.contains("# Weekly Project Review"))
+        XCTAssertTrue(md.contains("Send the notes"))
         XCTAssertTrue(md.contains("Let's start."))
-        XCTAssertTrue(md.contains("North Campus"))
+        XCTAssertTrue(md.contains("Weekly Series"))
 
         let csv = IntelligenceExport.csv(report)
         XCTAssertTrue(csv.contains("Action"))
-        XCTAssertTrue(csv.contains("Send drawings"))
+        XCTAssertTrue(csv.contains("Send the notes"))
         XCTAssertTrue(csv.contains("Transcript"))
         XCTAssertTrue(csv.contains("Alex"))
     }
@@ -77,8 +77,8 @@ final class IntelligenceExportTests: XCTestCase {
     func testJSONContainsKeys() throws {
         let data = try IntelligenceExport.json(sampleReport())
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        XCTAssertEqual(object?["title"] as? String, "North Campus Engineering Scope Review")
-        XCTAssertEqual((object?["topics"] as? [String])?.first, "North Campus")
+        XCTAssertEqual(object?["title"] as? String, "Weekly Project Review")
+        XCTAssertEqual((object?["topics"] as? [String])?.first, "Weekly Series")
         XCTAssertEqual((object?["transcript"] as? [[String: Any]])?.count, 1)
     }
 

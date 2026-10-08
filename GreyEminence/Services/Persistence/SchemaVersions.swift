@@ -300,8 +300,8 @@ enum SchemaV23: VersionedSchema {
 }
 
 /// SchemaV24 adds `Meeting.isArchived` so a meeting can be filed away from
-/// the recent list without waiting three months. Bool default false —
-/// lightweight / auto migration.
+/// the recent list without waiting for the sidebar window to age out.
+/// Bool default false — lightweight / auto migration.
 enum SchemaV24: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(24, 0, 0) }
     static var models: [any PersistentModel.Type] { SchemaV23.models }

@@ -166,3 +166,40 @@ final class TranscriptDeduplicatorLoudnessTests: XCTestCase {
         XCTAssertEqual(HighQualityTranscriber.level(of: samples, from: 2, to: 3), 0)
     }
 }
+
+final class DiarizationAudioBufferTests: XCTestCase {
+    func testEmitsAChunkOnlyOnceEnoughSamplesAccumulate() {
+        let buffer = DiarizationAudioBuffer(chunkDuration: 1, hopDuration: 0.5, sampleRate: 100)
+        XCTAssertNil(buffer.append(Array(repeating: 1, count: 50), at: 10))
+        let chunk = buffer.append(Array(repeating: 2, count: 50), at: 10.5)
+        XCTAssertEqual(chunk?.samples.count, 100)
+        XCTAssertEqual(chunk?.startTime, 10)
+        XCTAssertEqual(chunk?.samples.first, 1)
+        XCTAssertEqual(chunk?.samples.last, 2)
+    }
+
+    func testHopLeavesOverlapForTheNextChunk() {
+        let buffer = DiarizationAudioBuffer(chunkDuration: 1, hopDuration: 0.5, sampleRate: 100)
+        let first = buffer.append(Array(repeating: 1, count: 100), at: 0)
+        XCTAssertEqual(first?.samples.count, 100)
+        XCTAssertEqual(first?.startTime, 0)
+        let second = buffer.append(Array(repeating: 3, count: 50), at: 1)
+        XCTAssertEqual(second?.samples.count, 100)
+        XCTAssertEqual(second?.startTime, 0.5)
+        XCTAssertEqual(second?.samples.first, 1)
+        XCTAssertEqual(second?.samples.last, 3)
+    }
+
+    func testFlushRemainingDropsShortLeftoversAndKeepsLongOnes() {
+        let short = DiarizationAudioBuffer(chunkDuration: 1, hopDuration: 0.5, sampleRate: 100)
+        _ = short.append(Array(repeating: 1, count: 40), at: 0)
+        XCTAssertNil(short.flushRemaining(minSamples: 50))
+
+        let long = DiarizationAudioBuffer(chunkDuration: 1, hopDuration: 0.5, sampleRate: 100)
+        _ = long.append(Array(repeating: 1, count: 80), at: 3)
+        let leftover = long.flushRemaining(minSamples: 50)
+        XCTAssertEqual(leftover?.samples.count, 80)
+        XCTAssertEqual(leftover?.startTime, 3)
+        XCTAssertNil(long.flushRemaining(minSamples: 1))
+    }
+}

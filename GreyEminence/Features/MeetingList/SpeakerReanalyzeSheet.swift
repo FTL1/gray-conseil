@@ -85,7 +85,7 @@ struct SpeakerReanalyzeSheet: View {
             Text("Re-analyze speakers")
                 .font(.headline)
             Text(result == nil
-                 ? "Pick who was actually on this call. If a remote voice was stamped as you, use Set as / Speakers to name them, then Save voice print from this meeting, then re-analyze. Every stamp in each person’s collection is used, including room/mic character when that box was on. Overlapping talk lands on Talk-over instead of a third person. Lines currently labeled as you are re-checked."
+                 ? "Pick who was actually on this call. Re-analyze matches their saved voice prints (this meeting’s stamps and the offline voice profiles) and first-person self-introductions (“I’m Bob”) against contacts and calendar invitees. A person who said their name can be named even if they were not ticked. Overlapping talk lands on Talk-over. Lines currently labeled as you are re-checked."
                  : "Every unmatched snippet is listed. Play it, assign it (Me is first), or append it onto the previous or next line.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -122,7 +122,7 @@ struct SpeakerReanalyzeSheet: View {
                 }
                 .disabled(person.isMe || isWorking)
             }
-            Text("A waveform means this person already has a voice stamp. Unchecked people are not used as matches, so leftover clusters stay Talk-over or speaker-N instead of being named as someone who was not on the call.")
+            Text("A waveform means this person already has a voice stamp. Unchecked people are not used as voice-print matches. Someone who said “I’m Bob” can still be named from the transcript if that name matches a contact or invitee.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -143,7 +143,7 @@ struct SpeakerReanalyzeSheet: View {
             }
 
             if unknownSnippets.isEmpty {
-                Label("No unmatched voices. Every remote cluster matched a selected voice stamp.", systemImage: "checkmark.circle")
+                Label("No unmatched voices. Remaining remotes matched a voice print or named themselves in the transcript.", systemImage: "checkmark.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

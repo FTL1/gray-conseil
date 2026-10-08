@@ -134,7 +134,7 @@ Calendar **Alex Morgan** and Me **Alex you** are the same chip — same contact,
 | Topic Map list | Browse mode. | Topics, People, Speakers. | Same map, different door. |
 | Topic Map refresh / reset | Rebuild or reset view. | Refresh from meetings; reset zoom. | After new analysis. |
 | Ask | AI Q&A. | Needs index + API key. History in the pane. | Prose questions. |
-| Find regex | Pattern match. | Example: `cabinet.?count`. | Power search. |
+| Find regex | Pattern match. | Example: `page.?count`. | Power search. |
 | Find speaker menu | Limit to a voice. | Speakers heard in scope. | “What did Jordan say.” |
 
 ---

@@ -21,8 +21,8 @@ final class Meeting {
     var analysisError: String?
     var isInterviewMeeting: Bool = false
     /// User filed this meeting away from the recent Meetings list. Archive
-    /// still lists it. Older-than-three-months meetings are in Archive even
-    /// when this is false.
+    /// still lists it. Meetings older than the sidebar window are in Archive
+    /// even when this is false.
     var isArchived: Bool = false
     var createdAt: Date
 

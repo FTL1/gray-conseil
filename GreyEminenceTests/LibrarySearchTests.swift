@@ -3,22 +3,22 @@ import XCTest
 
 final class LibrarySearchTests: XCTestCase {
     func testTranscriptHitSkipsIntelligenceWhenUnchecked() {
-        let meeting = Meeting(title: "Campus Review")
+        let meeting = Meeting(title: "Weekly Review")
         let segment = TranscriptSegment(
             speaker: .other("Jordan Hale"),
-            text: "the 256 cabinet count is locked",
+            text: "the twelve page count is locked",
             startTime: 10,
             endTime: 12,
             isFinal: true
         )
         segment.meeting = meeting
         meeting.segments.append(segment)
-        let insight = MeetingInsight(summary: "Discussed financing, not cabinets.")
+        let insight = MeetingInsight(summary: "Discussed timelines, not pages.")
         insight.meeting = meeting
         meeting.insights.append(insight)
 
         let transcriptOnly = LibrarySearch.search(
-            query: "cabinet",
+            query: "page",
             in: [meeting],
             sources: .transcript
         )
@@ -26,7 +26,7 @@ final class LibrarySearchTests: XCTestCase {
         XCTAssertEqual(transcriptOnly.first?.speakerName, "Jordan Hale")
 
         let intelOnly = LibrarySearch.search(
-            query: "financing",
+            query: "timelines",
             in: [meeting],
             sources: .intelligence
         )
@@ -35,26 +35,26 @@ final class LibrarySearchTests: XCTestCase {
 
     func testIntelligenceFindsActionsAndQuestions() {
         let meeting = Meeting(title: "Scope")
-        let item = ActionItem(text: "Send the lender package")
+        let item = ActionItem(text: "Send the client package")
         item.meeting = meeting
         meeting.actionItems.append(item)
         let insight = MeetingInsight(
             summary: "Short recap.",
-            followUpQuestions: ["What is the First Nations engagement status?"],
-            topics: ["North Campus"]
+            followUpQuestions: ["What is the vendor engagement status?"],
+            topics: ["Weekly Series"]
         )
         insight.meeting = meeting
         meeting.insights.append(insight)
 
         let hits = LibrarySearch.search(
-            query: "lender",
+            query: "client",
             in: [meeting],
             sources: .intelligence
         )
         XCTAssertEqual(hits.map(\.kind), [.action])
 
         let topicHits = LibrarySearch.search(
-            query: "North Campus",
+            query: "Weekly Series",
             in: [meeting],
             sources: .intelligence
         )
@@ -74,7 +74,7 @@ final class LibrarySearchTests: XCTestCase {
     }
 
     func testSpeakerOnlyWithoutTextFindsMe() {
-        let meeting = Meeting(title: "Campus")
+        let meeting = Meeting(title: "Weekly")
         let mine = TranscriptSegment(
             speaker: .meNamed("Alex"),
             text: "I will send the package",
@@ -103,7 +103,7 @@ final class LibrarySearchTests: XCTestCase {
     }
 
     func testSpeakerFilterKeepsOnlyThatVoice() {
-        let meeting = Meeting(title: "Campus")
+        let meeting = Meeting(title: "Weekly")
         let mine = TranscriptSegment(speaker: .meNamed("Alex"), text: "I will send the package", startTime: 0, endTime: 1, isFinal: true)
         let jordan = TranscriptSegment(speaker: .other("Jordan Hale"), text: "the package is ready", startTime: 1, endTime: 2, isFinal: true)
         mine.meeting = meeting
@@ -120,11 +120,11 @@ final class LibrarySearchTests: XCTestCase {
         XCTAssertEqual(hits.map(\.speakerName), ["Jordan Hale"])
     }
 
-    func testRegexFindsCabinetCount() {
-        let meeting = Meeting(title: "Campus")
+    func testRegexFindsPageCount() {
+        let meeting = Meeting(title: "Weekly")
         let segment = TranscriptSegment(
             speaker: .other("Jordan Hale"),
-            text: "the 256 cabinet count is locked",
+            text: "the twelve page count is locked",
             startTime: 0,
             endTime: 1,
             isFinal: true
@@ -133,7 +133,7 @@ final class LibrarySearchTests: XCTestCase {
         meeting.segments.append(segment)
 
         var filter = LibrarySearchFilter()
-        filter.text = #"cabinet.?count"#
+        filter.text = #"page.?count"#
         filter.useRegex = true
         filter.sources = .transcript
         guard case .hits(let hits) = LibrarySearch.search(filter: filter, in: [meeting]) else {
@@ -153,7 +153,7 @@ final class LibrarySearchTests: XCTestCase {
     }
 
     func testMeetingNameAndDateFilters() {
-        let early = Meeting(title: "Campus Review", date: Date(timeIntervalSince1970: 1_700_000_000))
+        let early = Meeting(title: "Weekly Review", date: Date(timeIntervalSince1970: 1_700_000_000))
         let late = Meeting(title: "Other Call", date: Date(timeIntervalSince1970: 1_800_000_000))
         var filter = LibrarySearchFilter()
         filter.meetingName = "Campus"

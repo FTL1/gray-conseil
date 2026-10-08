@@ -89,47 +89,47 @@ final class VoicePrintTests: XCTestCase {
     }
 
     func testMeDisplayingAnotherNameIsNotAlreadyThatPerson() {
-        let robert = SpeakerLinkPerson(
+        let pat = SpeakerLinkPerson(
             contactID: UUID(),
-            name: "Robert Berube",
+            name: "Bob Smith",
             hasVoicePrint: true,
             aliases: [],
             meetingCount: 2,
             isThisVoice: false
         )
         let groups = SpeakerLinkCatalog.groups(
-            people: [robert],
-            transcriptNames: ["Robert Berube"],
-            attendeeNames: ["Robert Berube"],
-            meName: "Clay",
-            currentSpeakerName: "Robert Berube",
+            people: [pat],
+            transcriptNames: ["Bob Smith"],
+            attendeeNames: ["Bob Smith"],
+            meName: "Jane",
+            currentSpeakerName: "Bob Smith",
             currentIsMe: true
         )
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isThisVoice, true)
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isMe, true)
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.isThisVoice, false)
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.asSpeaker().isMe, false)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Jane" }?.isThisVoice, true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Jane" }?.isMe, true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Bob Smith" }?.isThisVoice, false)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Bob Smith" }?.asSpeaker().isMe, false)
     }
 
     func testNamedRemoteIsThisVoiceWhenIdentityMatches() {
-        let robert = SpeakerLinkPerson(
+        let pat = SpeakerLinkPerson(
             contactID: UUID(),
-            name: "Robert Berube",
+            name: "Bob Smith",
             hasVoicePrint: true,
             aliases: [],
             meetingCount: 2,
             isThisVoice: false
         )
         let groups = SpeakerLinkCatalog.groups(
-            people: [robert],
-            transcriptNames: ["Robert Berube"],
-            attendeeNames: ["Robert Berube"],
-            meName: "Clay",
-            currentSpeakerName: "Robert Berube",
+            people: [pat],
+            transcriptNames: ["Bob Smith"],
+            attendeeNames: ["Bob Smith"],
+            meName: "Jane",
+            currentSpeakerName: "Bob Smith",
             currentIsMe: false
         )
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Clay" }?.isThisVoice, false)
-        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Robert Berube" }?.isThisVoice, true)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Jane" }?.isThisVoice, false)
+        XCTAssertEqual(groups.thisMeeting.first { $0.name == "Bob Smith" }?.isThisVoice, true)
     }
 
     func testCollectionAppendsInsteadOfOverwriting() {
@@ -165,14 +165,14 @@ final class VoicePrintTests: XCTestCase {
 
     func testIsolationRemovesCollidingPrintsFromOthers() {
         let me = Contact(name: "Alex")
-        let robert = Contact(name: "Robert")
-        let robertVoice: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
-        me.addVoicePrint(robertVoice, source: VoicePrintSource.enroll)
+        let pat = Contact(name: "Pat")
+        let patVoice: [Float] = [1, 0, 0, 0, 0, 0, 0, 0]
+        me.addVoicePrint(patVoice, source: VoicePrintSource.enroll)
         XCTAssertTrue(me.hasVoicePrint)
-        VoicePrintIsolation.isolate(robertVoice, owner: robert, among: [me, robert])
+        VoicePrintIsolation.isolate(patVoice, owner: pat, among: [me, pat])
         XCTAssertFalse(me.hasVoicePrint)
-        robert.addVoicePrint(robertVoice, source: VoicePrintSource.session)
-        XCTAssertTrue(robert.hasVoicePrint)
+        pat.addVoicePrint(patVoice, source: VoicePrintSource.session)
+        XCTAssertTrue(pat.hasVoicePrint)
     }
 
     func testBestIdentityMatchDoesNotUseSamePersonAsRunnerUp() {
@@ -199,8 +199,8 @@ final class VoicePrintTests: XCTestCase {
 
     func testExpectedSpeakerUsesTheWholeCollection() {
         let person = MeetingSpeakerRecovery.ExpectedSpeaker(
-            name: "Robert",
-            speaker: .other("Robert"),
+            name: "Pat",
+            speaker: .other("Pat"),
             contactID: nil,
             embedding: [Float](repeating: 0.1, count: 8),
             embeddings: [
@@ -299,14 +299,14 @@ final class VoicePrintTests: XCTestCase {
         let hit = VoicePrintMatcher.identityAssignment(
             embedding: mix,
             in: [
-                (item: "clay", embedding: a, footprint: nil, usesFootprint: false),
-                (item: "robert", embedding: b, footprint: nil, usesFootprint: false)
+                (item: "jane", embedding: a, footprint: nil, usesFootprint: false),
+                (item: "pat", embedding: b, footprint: nil, usesFootprint: false)
             ],
             identity: { $0 }
         )
         XCTAssertNotNil(hit)
         XCTAssertEqual(hit?.kind, .mashup)
-        XCTAssertTrue(hit?.item == "clay" || hit?.item == "robert")
+        XCTAssertTrue(hit?.item == "jane" || hit?.item == "pat")
     }
 
     func testFootprintPullsACloseVoiceMatch() {
@@ -353,7 +353,7 @@ final class VoicePrintTests: XCTestCase {
             offset: 0,
             mic: mic,
             system: system,
-            remotes: [.other("Josh")]
+            remotes: [.other("Bob")]
         )
         XCTAssertEqual(leftover.displayName, "speaker-2")
         let unseated = DualTrackOverlap.resolve(
@@ -363,9 +363,9 @@ final class VoicePrintTests: XCTestCase {
             offset: 0,
             mic: mic,
             system: system,
-            remotes: [.other("Josh")]
+            remotes: [.other("Bob")]
         )
-        XCTAssertEqual(unseated.displayName, "Josh")
+        XCTAssertEqual(unseated.displayName, "Bob")
         XCTAssertFalse(unseated.isMe)
     }
 
@@ -396,14 +396,14 @@ final class VoicePrintTests: XCTestCase {
         )
         XCTAssertTrue(leftover.isTalkOver)
         let named = DualTrackOverlap.resolve(
-            proposed: .other("Josh"),
+            proposed: .other("Bob"),
             start: 0,
             end: 1,
             offset: 0,
             mic: mic,
             system: system
         )
-        XCTAssertEqual(named.displayName, "Josh")
+        XCTAssertEqual(named.displayName, "Bob")
         XCTAssertFalse(named.isTalkOver)
     }
 
@@ -426,7 +426,7 @@ final class VoicePrintTests: XCTestCase {
         let mic = [Float](repeating: 0.2, count: 16_000)
         let system = [Float](repeating: 0.02, count: 16_000)
         let assigned = DualTrackOverlap.resolve(
-            proposed: .other("Josh"),
+            proposed: .other("Bob"),
             start: 0,
             end: 1,
             offset: 0,
@@ -434,7 +434,7 @@ final class VoicePrintTests: XCTestCase {
             system: system,
             me: .me
         )
-        XCTAssertEqual(assigned.displayName, "Josh")
+        XCTAssertEqual(assigned.displayName, "Bob")
         XCTAssertFalse(assigned.isMe)
     }
 
@@ -443,7 +443,7 @@ final class VoicePrintTests: XCTestCase {
         let system = [Float](repeating: 0, count: 16_000)
         XCTAssertFalse(DualTrackOverlap.trackHasSpeech(system))
         let named = DualTrackOverlap.resolve(
-            proposed: .other("Josh"),
+            proposed: .other("Bob"),
             start: 0,
             end: 1,
             offset: 0,
@@ -452,7 +452,7 @@ final class VoicePrintTests: XCTestCase {
             me: .me,
             systemHasSpeech: false
         )
-        XCTAssertEqual(named.displayName, "Josh")
+        XCTAssertEqual(named.displayName, "Bob")
         let leftover = DualTrackOverlap.resolve(
             proposed: .other("speaker-1"),
             start: 0,

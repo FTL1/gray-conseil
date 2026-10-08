@@ -113,6 +113,18 @@ struct LiveTranscriptView: View {
         )
     }
 
+    private var speakerLinkPeople: [SpeakerLinkPerson] {
+        contacts.filter { !$0.isArchived }.map { $0.asSpeakerLinkPerson() }
+    }
+
+    private var transcriptSpeakerNames: [String] {
+        TranscriptDisplay.uniqueDisplayNames(in: segments)
+    }
+
+    private var talkShareByKey: [Speaker.IdentityKey: Int] {
+        SpeakerTalkShare.percents(in: segments)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if showsRoster, let roster {
@@ -159,7 +171,12 @@ struct LiveTranscriptView: View {
             if let speaker = menuSpeaker {
                 SpeakerActionPopover(
                     speaker: speaker,
-                    actions: actions(for: speaker),
+                    actions: actions(
+                        for: speaker,
+                        talkShareByKey: talkShareByKey,
+                        linkPeople: speakerLinkPeople,
+                        transcriptNames: transcriptSpeakerNames
+                    ),
                     onBeginInlineRename: {
                         menuSpeaker = nil
                     },
@@ -220,17 +237,26 @@ struct LiveTranscriptView: View {
     }
 
     private var transcriptScroll: some View {
-        ScrollViewReader { proxy in
+        let items = displayItems
+        let markers = markerSegmentIDs
+        let talkShare = talkShareByKey
+        let people = speakerLinkPeople
+        let names = transcriptSpeakerNames
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    let markers = markerSegmentIDs
-                    ForEach(displayItems, id: \.id) { item in
-                        liveMixerRow(item, markers: markers)
+                    ForEach(items, id: \.id) { item in
+                        liveMixerRow(
+                            item,
+                            markers: markers,
+                            talkShareByKey: talkShare,
+                            linkPeople: people,
+                            transcriptNames: names
+                        )
                             .id(item.id)
                     }
                 }
                 .padding()
-                .id("live-mixer-\(roster?.mixerGeneration ?? 0)-\(hiddenSpeakers.count)")
             }
             .onChange(of: segments.count) { _, _ in
                 if let lastID = segments.last?.id {
@@ -262,14 +288,25 @@ struct LiveTranscriptView: View {
     }
 
     @ViewBuilder
-    private func liveMixerRow(_ item: TranscriptDisplayItem, markers: [UUID: String]) -> some View {
+    private func liveMixerRow(
+        _ item: TranscriptDisplayItem,
+        markers: [UUID: String],
+        talkShareByKey: [Speaker.IdentityKey: Int],
+        linkPeople: [SpeakerLinkPerson],
+        transcriptNames: [String]
+    ) -> some View {
         switch item {
         case .segment(let segment):
             if TranscriptDisplay.isHidden(segment.speaker, hiddenSpeakers: mixerHiddenSpeakers) {
                 CollapsedSpeakerRow(
                     speaker: segment.speaker,
                     hiddenCount: 1,
-                    actions: revealActions(for: segment.speaker)
+                    actions: revealActions(
+                        for: segment.speaker,
+                        talkShareByKey: talkShareByKey,
+                        linkPeople: linkPeople,
+                        transcriptNames: transcriptNames
+                    )
                 )
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -282,7 +319,13 @@ struct LiveTranscriptView: View {
                     TranscriptSegmentRow(
                         segment: segment,
                         confidence: segmentConfidence[segment.id],
-                        speakerActions: actions(for: segment.speaker, anchorID: segment.id),
+                        speakerActions: actions(
+                            for: segment.speaker,
+                            anchorID: segment.id,
+                            talkShareByKey: talkShareByKey,
+                            linkPeople: linkPeople,
+                            transcriptNames: transcriptNames
+                        ),
                         highlightQuery: highlightQuery(for: segment)
                     )
                     .background(
@@ -302,13 +345,28 @@ struct LiveTranscriptView: View {
             CollapsedSpeakerRow(
                 speaker: speaker,
                 hiddenCount: count,
-                actions: revealActions(for: speaker)
+                actions: revealActions(
+                    for: speaker,
+                    talkShareByKey: talkShareByKey,
+                    linkPeople: linkPeople,
+                    transcriptNames: transcriptNames
+                )
             )
         }
     }
 
-    private func revealActions(for speaker: Speaker) -> SpeakerBadgeActions {
-        var actions = actions(for: speaker)
+    private func revealActions(
+        for speaker: Speaker,
+        talkShareByKey: [Speaker.IdentityKey: Int],
+        linkPeople: [SpeakerLinkPerson],
+        transcriptNames: [String]
+    ) -> SpeakerBadgeActions {
+        var actions = actions(
+            for: speaker,
+            talkShareByKey: talkShareByKey,
+            linkPeople: linkPeople,
+            transcriptNames: transcriptNames
+        )
         actions.onToggleHidden = {
             if let roster {
                 roster.reveal(speaker, in: segments)
@@ -366,7 +424,13 @@ struct LiveTranscriptView: View {
         scrollToSegmentID = searchMatchIDs[searchMatchIndex]
     }
 
-    private func actions(for speaker: Speaker, anchorID: UUID? = nil) -> SpeakerBadgeActions {
+    private func actions(
+        for speaker: Speaker,
+        anchorID: UUID? = nil,
+        talkShareByKey: [Speaker.IdentityKey: Int],
+        linkPeople: [SpeakerLinkPerson],
+        transcriptNames: [String]
+    ) -> SpeakerBadgeActions {
         let isMenuSpeaker = menuSpeaker?.matchesIdentity(speaker) == true
         let contactID = roster?.seat(matching: speaker)?.contactID
         let paletteContact = SpeakerPalette.contact(
@@ -375,7 +439,7 @@ struct LiveTranscriptView: View {
             in: Array(contacts)
         )
         return SpeakerBadgeActions(
-            talkSharePercent: SpeakerTalkShare.percent(for: speaker, in: segments),
+            talkSharePercent: talkShareByKey[speaker.identityKey],
             color: SpeakerPalette.color(for: speaker, contactID: contactID, contacts: Array(contacts)),
             colorSlot: paletteContact?.colorSlot,
             isColorLocked: paletteContact?.isColorLocked ?? false,
@@ -414,7 +478,11 @@ struct LiveTranscriptView: View {
             onSaveAsNewContact: onLinkSpeakerToContact == nil ? nil : {
                 saveAsNewContact(speaker)
             },
-            speakerLinks: speakerLinkGroups(for: speaker),
+            speakerLinks: speakerLinkGroups(
+                for: speaker,
+                people: linkPeople,
+                transcriptNames: transcriptNames
+            ),
             onSelectSpeakerLink: (onLinkSpeakerToContact != nil || onAssignIdentity != nil || onRenameSpeaker != nil)
                 ? { person in applySpeakerLink(person, to: speaker) }
                 : nil,
@@ -433,17 +501,14 @@ struct LiveTranscriptView: View {
         )
     }
 
-    private func speakerLinkGroups(for speaker: Speaker) -> SpeakerLinkGroups {
-        let people = contacts.filter { !$0.isArchived }.map { $0.asSpeakerLinkPerson() }
-        let names = segments.reduce(into: [String]()) { result, segment in
-            let name = segment.speaker.displayName
-            if !result.contains(where: { $0.compare(name, options: .caseInsensitive) == .orderedSame }) {
-                result.append(name)
-            }
-        }
-        return SpeakerLinkCatalog.groups(
+    private func speakerLinkGroups(
+        for speaker: Speaker,
+        people: [SpeakerLinkPerson],
+        transcriptNames: [String]
+    ) -> SpeakerLinkGroups {
+        SpeakerLinkCatalog.groups(
             people: people,
-            transcriptNames: names,
+            transcriptNames: transcriptNames,
             attendeeNames: attendees.map(\.name),
             meName: SpeakerNames.effectiveMeName,
             currentSpeakerName: speaker.displayName,

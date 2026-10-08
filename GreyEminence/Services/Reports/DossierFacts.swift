@@ -41,7 +41,6 @@ struct DossierLine: Sendable, Equatable {
 }
 
 enum DossierFacts {
-    @MainActor
     static func snapshot(meeting: Meeting) -> DossierMeetingSnapshot {
         let roster = MeetingRoster.snapshot(for: meeting)
         let myLabels = ([roster.myName] + roster.myAliases).compactMap { $0 }

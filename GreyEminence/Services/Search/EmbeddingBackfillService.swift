@@ -7,26 +7,30 @@ import SwiftData
 /// stays invisible to Ask forever — the only existing recovery was the
 /// nuclear "Reindex all" button in Settings, which re-embeds everything.
 ///
-/// Runs once shortly after launch, finds meetings with segments that
-/// have zero embedding records for the current model, and indexes just
-/// those. Idempotent — safe to call again, will no-op when the store is
-/// already fully covered.
+/// Launch scan is offline: a background context, only meetings missing
+/// from the embedding store, one at a time, paused while recording or
+/// the machine is thermally constrained.
 @MainActor
 enum EmbeddingBackfillService {
-    /// Schedule the backfill to run after the UI has settled. Non-blocking;
-    /// call from `onAppear`. The delay keeps it out of the way of the
-    /// initial render and any reprocess queue ticks that fire at launch.
-    static func scheduleAtLaunch(mainContext: ModelContext, delaySeconds: UInt64 = 5) {
-        Task { @MainActor in
+    static func scheduleAtLaunch(
+        container: ModelContainer,
+        isBusy: @escaping @MainActor () -> Bool = { false },
+        delaySeconds: UInt64 = 20
+    ) {
+        Task(priority: .utility) {
             try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
-            await runNow(mainContext: mainContext)
+            await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+            await runNow(container: container, isBusy: isBusy)
         }
     }
 
     /// Run the scan + index now. Surfaces via TransientActivityCoordinator
     /// only when there's actual work to do, so the footer stays quiet on
     /// the common "already covered" path.
-    static func runNow(mainContext: ModelContext) async {
+    static func runNow(
+        container: ModelContainer,
+        isBusy: @escaping @MainActor () -> Bool = { false }
+    ) async {
         guard let store = EmbeddingStore.shared else { return }
         let providerRaw = UserDefaults.standard.string(forKey: "embeddingProvider")
             ?? EmbeddingProvider.nlEmbedding.rawValue
@@ -39,16 +43,21 @@ enum EmbeddingBackfillService {
             )
             return
         }
-
         let indexedIDs = store.indexedMeetingIDs(for: service.modelIdentifier)
-        let meetings = (try? mainContext.fetch(FetchDescriptor<Meeting>())) ?? []
-        let missing = meetings.filter { meeting in
-            meeting.status == .completed
-                && !meeting.segments.isEmpty
-                && meeting.reProcessingState == nil
-                && !indexedIDs.contains(meeting.id)
-        }
-        guard !missing.isEmpty else {
+
+        let missingIDs: [UUID] = await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            context.autosaveEnabled = false
+            let meetings = (try? context.fetch(FetchDescriptor<Meeting>())) ?? []
+            return meetings.compactMap { meeting -> UUID? in
+                guard meeting.status == .completed else { return nil }
+                guard meeting.reProcessingState == nil else { return nil }
+                guard !indexedIDs.contains(meeting.id) else { return nil }
+                return meeting.id
+            }
+        }.value
+
+        guard !missingIDs.isEmpty else {
             LogManager.send(
                 "EmbeddingBackfill: nothing to do — \(indexedIDs.count) meetings already indexed for \(service.modelIdentifier)",
                 category: .general
@@ -57,19 +66,19 @@ enum EmbeddingBackfillService {
         }
 
         LogManager.send(
-            "EmbeddingBackfill: indexing \(missing.count) un-covered meeting(s)",
+            "EmbeddingBackfill: indexing \(missingIDs.count) un-covered meeting(s)",
             category: .general
         )
-        let label = "Indexing \(missing.count) meeting\(missing.count == 1 ? "" : "s") for search…"
+        let label = "Indexing \(missingIDs.count) meeting\(missingIDs.count == 1 ? "" : "s") for search…"
         await TransientActivityCoordinator.shared.runAsync(label) {
             let indexer = EmbeddingIndexer(store: store, service: service)
-            for meeting in missing {
-                // Re-check mid-loop: a reprocess might have started, or the
-                // meeting might have been deleted by the user. Indexing a
-                // tombstoned meeting accesses lazy SwiftData properties
-                // that will trap.
-                guard meeting.reProcessingState == nil else { continue }
-                await indexer.indexMeeting(meeting)
+            for id in missingIDs {
+                await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+                let payload = await Task.detached(priority: .utility) {
+                    EmbeddingIndexPayload.load(id: id, container: container)
+                }.value
+                guard let payload else { continue }
+                await indexer.index(payload)
             }
         }
         LogManager.send("EmbeddingBackfill: complete", category: .general)

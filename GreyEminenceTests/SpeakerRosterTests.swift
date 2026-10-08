@@ -263,63 +263,63 @@ final class SpeakerRosterTests: XCTestCase {
     }
 
     func testSpeakerToApplyNeverFoldsARemoteOntoMe() {
-        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+        SpeakerNames.setSessionMeName("Jane", saveAsDefault: false)
         defer { SpeakerNames.resetSession() }
         let roster = SpeakerRoster()
-        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
-        XCTAssertFalse(roster.speakerToApply(.other("Josh")).isMe)
-        XCTAssertEqual(roster.speakerToApply(.other("Josh")).displayName, "Josh")
+        roster.seed(attendeeNames: ["Bob"], meName: "Jane")
+        XCTAssertFalse(roster.speakerToApply(.other("Bob")).isMe)
+        XCTAssertEqual(roster.speakerToApply(.other("Bob")).displayName, "Bob")
         XCTAssertTrue(roster.speakerToApply(.me).isMe)
-        XCTAssertTrue(roster.speakerToApply(.meNamed("Clay")).isMe)
-        XCTAssertFalse(roster.speakerToApply(.other("Robert")).isMe)
-        XCTAssertEqual(roster.speakerToApply(.other("Robert")).displayName, "Robert")
+        XCTAssertTrue(roster.speakerToApply(.meNamed("Jane")).isMe)
+        XCTAssertFalse(roster.speakerToApply(.other("Pat")).isMe)
+        XCTAssertEqual(roster.speakerToApply(.other("Pat")).displayName, "Pat")
     }
 
     func testAdoptDoesNotBindMeOntoARemote() throws {
-        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+        SpeakerNames.setSessionMeName("Jane", saveAsDefault: false)
         defer { SpeakerNames.resetSession() }
         let roster = SpeakerRoster()
-        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
+        roster.seed(attendeeNames: ["Bob"], meName: "Jane")
         let mine = TranscriptSegment(
-            speaker: .meNamed("Clay"),
+            speaker: .meNamed("Jane"),
             text: "hi",
             startTime: 0,
             endTime: 1,
             isFinal: true
         )
         let other = TranscriptSegment(
-            speaker: .meNamed("Clay"),
+            speaker: .meNamed("Jane"),
             text: "yo",
             startTime: 1,
             endTime: 2,
             isFinal: true
         )
-        mine.speaker = roster.speakerToApply(.other("Josh"))
-        roster.adopt(from: .meNamed("Clay"), onto: .other("Josh"), in: [mine, other])
-        let josh = try XCTUnwrap(roster.seats.first { $0.name == "Josh" })
-        XCTAssertFalse(josh.boundSpeakers.contains(where: \.isMe))
+        mine.speaker = roster.speakerToApply(.other("Bob"))
+        roster.adopt(from: .meNamed("Jane"), onto: .other("Bob"), in: [mine, other])
+        let bob = try XCTUnwrap(roster.seats.first { $0.name == "Bob" })
+        XCTAssertFalse(bob.boundSpeakers.contains(where: \.isMe))
         XCTAssertTrue(other.speaker.isMe)
-        XCTAssertEqual(mine.speaker.displayName, "Josh")
+        XCTAssertEqual(mine.speaker.displayName, "Bob")
         XCTAssertFalse(mine.speaker.isMe)
     }
 
-    func testUnifyDoesNotRevertAMeLineAssignedToJosh() {
-        SpeakerNames.setSessionMeName("Clay", saveAsDefault: false)
+    func testUnifyDoesNotRevertAMeLineAssignedToBob() {
+        SpeakerNames.setSessionMeName("Jane", saveAsDefault: false)
         defer { SpeakerNames.resetSession() }
         let roster = SpeakerRoster()
-        roster.seed(attendeeNames: ["Josh"], meName: "Clay")
+        roster.seed(attendeeNames: ["Bob"], meName: "Jane")
         let line = TranscriptSegment(
-            speaker: .meNamed("Clay"),
+            speaker: .meNamed("Jane"),
             text: "hi",
             startTime: 0,
             endTime: 1,
             isFinal: true
         )
-        line.speaker = roster.speakerToApply(.other("Josh"))
+        line.speaker = roster.speakerToApply(.other("Bob"))
         roster.bindNamedVoices(in: [line])
         _ = roster.unifyOntoSeats(in: [line])
         XCTAssertFalse(line.speaker.isMe)
-        XCTAssertEqual(line.speaker.displayName, "Josh")
+        XCTAssertEqual(line.speaker.displayName, "Bob")
     }
 
     func testMixerGenerationBumpsOnHideShowAndIsolate() {

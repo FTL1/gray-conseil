@@ -196,8 +196,8 @@ enum AIPromptTemplates {
         The snippets below come from OTHER meetings' transcripts — none of this was said \
         in this meeting. Use them ONLY to find blind spots that are relevant to THIS \
         meeting's inferred purpose. Do NOT import them into the summary, action items, \
-        or topics, and do NOT turn them into a generic domain questionnaire (financing, \
-        environmental, engagement, timeline) unless someone in THIS meeting raised that gap.
+        or topics, and do NOT turn them into a generic domain questionnaire (budget, \
+        legal, engagement, timeline) unless someone in THIS meeting raised that gap.
 
         \(snippets)
         """
@@ -545,7 +545,7 @@ enum AIPromptTemplates {
         not answered, (2) next questions implied by work still outstanding in THIS conversation \
         (a document to fix, a number another speaker voiced that the user's materials must match, \
         a decision that lacks an owner), (3) only then a few true blind spots. \
-        Do NOT emit a generic domain questionnaire (financing status, environmental diligence, \
+        Do NOT emit a generic domain questionnaire (budget status, legal diligence, \
         engagement, timeline) unless someone in THIS meeting raised that gap. If the meeting \
         was about correcting outbound documents or aligning them with what a speaker actually \
         said, follow-ups must be about those documents and those facts. \
@@ -599,7 +599,7 @@ enum AIPromptTemplates {
 
         Infer PURPOSE from the conversation first:
         - If they are correcting documents, a deck, a proposal, or language sent to \
-        prospects/lenders/engineers so it matches what another speaker actually voiced, \
+        clients so it matches what another speaker actually voiced, \
         that IS the meeting. Lead the summary with that work, then the facts they need \
         to capture.
         - Shared-screen content is evidence of the artifact being reviewed, not automatically \
@@ -614,11 +614,11 @@ enum AIPromptTemplates {
         - summary: purpose first, then decisions and the facts another speaker stated that \
         the user's materials must reflect.
         - action_items: every concrete commitment, with assignee. Include document/comms \
-        work implied by the talk ("update the proposal / ROM / scope write-up so it uses \
+        work implied by the talk ("update the proposal / draft / scope write-up so it uses \
         the numbers and wording the other speaker actually said").
         - follow_ups: unanswered questions from THIS room, then implied next questions about \
         the work product. Do not invent a due-diligence questionnaire.
-        - topics: both the work product (e.g. prospect documents) and named subject-matter terms.
+        - topics: both the work product (e.g. project documents) and named subject-matter terms.
 
         TRANSCRIPT:
         {{transcript}}
@@ -764,8 +764,8 @@ enum AIPromptTemplates {
         Your tasks:
         - Generate a short, descriptive title (5-8 words max, no quotes) that names the \
         PURPOSE — what the tool user was trying to get done — not merely the calendar \
-        subject or a shared document's topic. Example: "Align prospect docs with spoken facts" \
-        rather than "25MW Warehouse Engineering Review" if the talk was about correcting \
+        subject or a shared document's topic. Example: "Align project docs with spoken facts" \
+        rather than "Quarterly Engineering Review" if the talk was about correcting \
         outbound materials. Return it in the "title" field.
         - Re-infer PURPOSE from the FULL transcript. The CURRENT SUMMARY is a live-analysis \
         draft and may have latched onto subject matter (a PDF on screen, a calendar title) \

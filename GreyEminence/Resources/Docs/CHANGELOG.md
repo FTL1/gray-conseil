@@ -7,9 +7,13 @@ full detail; older ones are summarized. The version number tracks
 Grey Conseil test builds below are **this fork only**. They are not Matt’s shipping
 Grey Eminence releases.
 
+## 0.28.4-public.10 — 2026-10-07
+
+**Speaker ID after the meeting, a two-week list, and quieter launch.** Voice prints and first-person intros (“I’m Bob”) run after you stop recording, and again at launch for recent unnamed remotes. Re-analyze uses both stamp stores (contact prints and VoiceProfiles.json). Save voice print writes both. The meetings list opens on the last 14 days; Find, Archive, **Show last 90 days**, and **Show all meetings** still reach older sessions. Opening a meeting no longer rebuilds every transcript row. Grok library heal and embedding backfill wait until the machine is idle. Live diarization buffers off the main thread. Docs and tests use Jane, Bob, Alex, and Jordan with generic project language.
+
 ## 0.28.4-public.9 — 2026-10-05
 
-**Snippet play at normal speed, named remotes stay named, contact assignment sticks.** Play on a transcript line used the video timescale 600 against AAC, so snippets ran about 10× fast; it now uses the recording’s own time base. Re-analyze no longer stamps every hot-mic line as you — leftover/unnamed lines still follow mic vs system vs both, but Josh stays Josh. Set as / a contact on a line assigns that person even when the line was labeled Me, and renaming one snippet no longer changes who Me is.
+**Snippet play at normal speed, named remotes stay named, contact assignment sticks.** Play on a transcript line used the video timescale 600 against AAC, so snippets ran about 10× fast; it now uses the recording’s own time base. Re-analyze no longer stamps every hot-mic line as you — leftover/unnamed lines still follow mic vs system vs both, but Bob stays Bob. Set as / a contact on a line assigns that person even when the line was labeled Me, and renaming one snippet no longer changes who Me is.
 
 ## 0.28.4-public.8 — 2026-09-30
 
@@ -21,7 +25,7 @@ Grey Eminence releases.
 
 ## 0.28.4-public.6 — 2026-09-29
 
-**Room/mic character on a voice print, and overlapping talk no longer mints a third person.** WeSpeaker tries to ignore the room. A checkbox on Save voice print (**Include room and mic character**, on by default) also stamps reverb, hiss, and the far-end mic. Re-analyze uses that footprint. Mixed Clay+remote audio that used to become speaker-3 is folded back onto the two real voices when both tracks are talking.
+**Room/mic character on a voice print, and overlapping talk no longer mints a third person.** WeSpeaker tries to ignore the room. A checkbox on Save voice print (**Include room and mic character**, on by default) also stamps reverb, hiss, and the far-end mic. Re-analyze uses that footprint. Mixed you+remote audio that used to become speaker-3 is folded back onto the two real voices when both tracks are talking.
 
 ## 0.28.4-public.5 — 2026-09-29
 

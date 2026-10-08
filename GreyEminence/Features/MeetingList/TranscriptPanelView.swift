@@ -44,7 +44,8 @@ struct TranscriptPanelView: View {
     @State private var menuAnchorID: UUID?
     @State private var contactSpeaker: Speaker?
     @State private var sortedSegments: [TranscriptSegment] = []
-    @State private var speakerRevision = 0
+    @State private var segmentsByID: [UUID: TranscriptSegment] = [:]
+    @State private var cachedTranscriptNames: [String] = []
     @State private var talkShareByKey: [Speaker.IdentityKey: Int] = [:]
     @State private var isRecoveringSpeakers = false
     @State private var showDedupDebug = false
@@ -138,7 +139,7 @@ struct TranscriptPanelView: View {
                     systemImage: "text.bubble",
                     description: Text("This meeting has no transcript segments")
                 )
-            } else if displayItems.isEmpty {
+            } else if displayedRowRefs.isEmpty {
                 ContentUnavailableView(
                     "No matching lines",
                     systemImage: "text.magnifyingglass",
@@ -154,8 +155,11 @@ struct TranscriptPanelView: View {
             let migrated = SpeakerLegacyMigration.migrate(meeting.segments)
             let identified = SpeakerSelfIntroduction.apply(
                 segments: meeting.segments,
-                inviteeNames: meeting.attendees.map(\.name),
-                myLabels: [SpeakerNames.effectiveMeName, Speaker.defaultMeLabel].compactMap { $0 }
+                inviteeNames: SpeakerIdentityPass.rosterNames(
+                    meeting: meeting,
+                    contacts: Array(contacts)
+                ),
+                myLabels: SpeakerIdentityPass.myLabels()
             )
             if migrated > 0 || identified > 0 {
                 saveEdit(site: "migrateGuestLabels")
@@ -170,12 +174,8 @@ struct TranscriptPanelView: View {
             refreshSegments()
             if count > 0 { considerAutoMerge() }
         }
-        .onChange(of: speakerRoster.isolatedSpeaker?.identityKey) {
+        .onChange(of: speakerRoster.mixerGeneration) {
             pruneSelectionToVisible()
-        }
-        .onChange(of: speakerRoster.hiddenSpeakers.map(\.identityKey)) {
-            pruneSelectionToVisible()
-            speakerRevision += 1
         }
         .overlay {
             if isSplittingMeeting {
@@ -607,17 +607,28 @@ struct TranscriptPanelView: View {
         .background(Color.accentColor.opacity(0.10))
     }
 
-    private var displayItems: [TranscriptDisplayItem] {
-        // Search highlights and jumps; it must not filter the list or the
-        // speaker menu's presenting row disappears after one character.
-        TranscriptDisplay.items(
+    /// Compact metadata for ForEach. Hide/show patches this; row views whose
+    /// `id` did not change stay alive. Built from the cached segment index,
+    /// not a full `TranscriptDisplayItem` list of SwiftData objects.
+    private var displayedRowRefs: [TranscriptRowRef] {
+        TranscriptDisplay.rowRefs(
             from: sortedSegments,
             hiddenSpeakers: mixerHiddenSpeakers,
             isolatedSpeaker: speakerRoster.isolatedSpeaker,
-            searchSpeaker: nil,
-            searchQuery: "",
             isolatedSpeakers: mixerIsolatedSpeakers
         )
+    }
+
+    private var speakerLinkPeople: [SpeakerLinkPerson] {
+        contacts.filter { !$0.isArchived }.map { $0.asSpeakerLinkPerson() }
+    }
+
+    private var playingSnippetID: UUID? {
+        SegmentAudioPlayer.shared.playingSegmentID
+    }
+
+    private var snippetPlaybackFailure: (segmentID: UUID, message: String)? {
+        SegmentAudioPlayer.shared.failure
     }
 
     private var speakerFilterBanner: some View {
@@ -705,17 +716,18 @@ struct TranscriptPanelView: View {
 
     private var transcriptList: some View {
         let systemSegments = showDedupDebug ? sortedSegments.filter { !$0.speaker.isMe } : []
-        let mixerToken = "\(speakerRoster.mixerGeneration)-\(speakerRevision)"
         return ScrollViewReader { proxy in
             ScrollView {
+                // Row identity is `ref.id` (`segment:<uuid>` / `hidden:<key>`).
+                // Do not `.id` this stack with mixerGeneration — that rebuilds
+                // every EditableTranscriptSegmentRow on hide, assign, and play.
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(displayItems, id: \.id) { item in
-                        mixerRow(item, systemSegments: systemSegments)
-                            .id(item.id)
+                    ForEach(displayedRowRefs) { ref in
+                        mixerRow(ref, systemSegments: systemSegments)
+                            .id(ref.id)
                     }
                 }
                 .padding()
-                .id(mixerToken)
             }
             .onChange(of: scrollToSegmentID) { _, newID in
                 guard let newID else { return }
@@ -747,25 +759,28 @@ struct TranscriptPanelView: View {
     }
 
     @ViewBuilder
-    private func mixerRow(_ item: TranscriptDisplayItem, systemSegments: [TranscriptSegment]) -> some View {
-        switch item {
-        case .segment(let segment):
-            transcriptRow(segment, systemSegments: systemSegments)
-                .padding(.vertical, 2)
-                .background(
-                    highlightedSegmentID == segment.id
-                        ? Color.accentColor.opacity(0.18)
-                        : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 6)
-                )
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    guard let seat = speakerRoster.paintSeat else { return }
-                    speakerUndo.capture(meeting.segments)
-                    segment.speaker = seat.speaker
-                    speakerRoster.bind(detected: seat.speaker, to: seat.id)
-                    saveEdit(site: "roster-paint")
-                }
+    private func mixerRow(_ ref: TranscriptRowRef, systemSegments: [TranscriptSegment]) -> some View {
+        switch ref.kind {
+        case .segment(let segmentID):
+            if let segment = segmentsByID[segmentID] {
+                transcriptRow(segment, systemSegments: systemSegments)
+                    .padding(.vertical, 2)
+                    .background(
+                        highlightedSegmentID == segment.id
+                            ? Color.accentColor.opacity(0.18)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard let seat = speakerRoster.paintSeat else { return }
+                        speakerUndo.capture(meeting.segments)
+                        segment.speaker = seat.speaker
+                        speakerRoster.bind(detected: seat.speaker, to: seat.id)
+                        refreshSpeakerMetadata()
+                        saveEdit(site: "roster-paint")
+                    }
+            }
         case .collapsed(let speaker, let count):
             collapsedStub(speaker: speaker, hiddenCount: count)
                 .padding(.vertical, 2)
@@ -807,11 +822,10 @@ struct TranscriptPanelView: View {
                     onPlayAudio: {
                         playSnippet(segment)
                     },
-                    isPlayingAudio: SegmentAudioPlayer.shared.playingSegmentID == segment.id,
-                    playbackFailure: {
-                        let failure = SegmentAudioPlayer.shared.failure
-                        return failure?.segmentID == segment.id ? failure?.message : nil
-                    }(),
+                    isPlayingAudio: playingSnippetID == segment.id,
+                    playbackFailure: snippetPlaybackFailure?.segmentID == segment.id
+                        ? snippetPlaybackFailure?.message
+                        : nil,
                     speakerActions: speakerActions(for: segment.speaker, anchorID: segment.id),
                     highlightQuery: highlightQuery(for: segment)
                 )
@@ -829,16 +843,9 @@ struct TranscriptPanelView: View {
     }
 
     private func speakerLinkGroups(for speaker: Speaker) -> SpeakerLinkGroups {
-        let people = contacts.filter { !$0.isArchived }.map { $0.asSpeakerLinkPerson() }
-        let names = sortedSegments.reduce(into: [String]()) { result, segment in
-            let name = segment.speaker.displayName
-            if !result.contains(where: { $0.compare(name, options: .caseInsensitive) == .orderedSame }) {
-                result.append(name)
-            }
-        }
-        return SpeakerLinkCatalog.groups(
-            people: people,
-            transcriptNames: names,
+        SpeakerLinkCatalog.groups(
+            people: speakerLinkPeople,
+            transcriptNames: cachedTranscriptNames,
             attendeeNames: meeting.attendees.map(\.name),
             meName: SpeakerNames.effectiveMeName,
             currentSpeakerName: speaker.displayName,
@@ -928,8 +935,9 @@ struct TranscriptPanelView: View {
                 let extracted = try await VoicePrintEnrollment.extract(request)
                 let embedding = extracted.embedding
                 VoicePrintIsolation.isolate(embedding, owner: contact, among: Array(contacts))
-                contact.addVoicePrint(
+                SpeakerIdentityPass.enrollEmbedding(
                     embedding,
+                    on: contact,
                     meetingID: meeting.id,
                     source: VoicePrintSource.session,
                     footprint: extracted.footprint,
@@ -976,8 +984,13 @@ struct TranscriptPanelView: View {
 
     private func refreshSegments() {
         sortedSegments = meeting.segments.sorted { $0.startTime < $1.startTime }
+        segmentsByID = Dictionary(sortedSegments.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        refreshSpeakerMetadata()
+    }
+
+    private func refreshSpeakerMetadata() {
         talkShareByKey = SpeakerTalkShare.percents(in: sortedSegments)
-        speakerRevision += 1
+        cachedTranscriptNames = TranscriptDisplay.uniqueDisplayNames(in: sortedSegments)
     }
 
     private func retargetSpeaker(from old: Speaker, to new: Speaker, mergeIntoExisting: Bool) {
@@ -1338,7 +1351,6 @@ struct TranscriptPanelView: View {
         contact.isColorLocked = locked
         SpeakerPalette.assign(contacts: Array(contacts) + [contact])
         PersistenceGate.save(modelContext, site: "speakerColor", critical: false, meetingID: meeting.id)
-        speakerRevision += 1
     }
 
     private func mergeSelectedSegments() {
@@ -1523,7 +1535,7 @@ struct TranscriptPanelView: View {
             }
         }
         saveEdit(site: "deduplicateTranscript")
-        sortedSegments = meeting.segments.sorted { $0.startTime < $1.startTime }
+        refreshSegments()
         LogManager.send("Manual dedup removed \(result.removedCount) segment(s)", category: .transcription)
     }
 
@@ -1539,6 +1551,7 @@ struct TranscriptPanelView: View {
             segment.originalSpeakerData = nil
             segment.isEdited = false
         }
+        refreshSegments()
         saveEdit(site: "revertAllEdits")
     }
 
@@ -1565,7 +1578,6 @@ struct TranscriptPanelView: View {
             until: nextStart,
             previousEnd: previousEnd
         )
-        speakerRevision += 1
     }
 
     private func changeSpeakerOne(from segment: TranscriptSegment, to newSpeaker: Speaker) {
@@ -1669,7 +1681,8 @@ struct TranscriptPanelView: View {
             do {
                 let result = try await MeetingSpeakerRecovery.recover(
                     meeting: meeting,
-                    expected: expected
+                    expected: expected,
+                    contacts: Array(contacts)
                 )
                 enrollRecoveredPrints(result, expected: expected)
                 speakerRoster.bindNamedVoices(
@@ -1678,6 +1691,10 @@ struct TranscriptPanelView: View {
                 )
                 refreshSegments()
                 saveEdit(site: "recoverSpeakers")
+                GrokLibrary.upsert(meeting)
+                if result.changed > 0 {
+                    SpeakerRepairService.invalidateSearchIndex(for: meeting)
+                }
                 reanalyzeResult = result
                 editSaveError = result.changed == 0
                     ? "Audio did not yield distinct speakers beyond the current labels."
@@ -1712,7 +1729,7 @@ struct TranscriptPanelView: View {
         expected: [MeetingSpeakerRecovery.ExpectedSpeaker]
     ) {
         for person in expected {
-            let embedding = result.embeddings[person.speaker.identityKey] ?? person.embedding
+            let embedding = result.embeddings[person.speaker.identityKey]
             guard let embedding, embedding.count >= 8 else { continue }
             let contact = resolveOrCreateContact(
                 named: person.name,
@@ -1721,7 +1738,12 @@ struct TranscriptPanelView: View {
             )
             guard let contact else { continue }
             VoicePrintIsolation.isolate(embedding, owner: contact, among: Array(contacts))
-            contact.addVoicePrint(embedding, meetingID: meeting.id, source: VoicePrintSource.reanalyze)
+            SpeakerIdentityPass.enrollEmbedding(
+                embedding,
+                on: contact,
+                meetingID: meeting.id,
+                source: VoicePrintSource.reanalyze
+            )
             rememberAlias(person.speaker.displayName, on: contact)
         }
         for speaker in result.matchedSpeakers where !speaker.isMe && !speaker.isGuestPlaceholder {
@@ -1731,10 +1753,14 @@ struct TranscriptPanelView: View {
                 contactID: nil,
                 isMe: false
             )
-            contact?.addVoicePrint(embedding, meetingID: meeting.id, source: VoicePrintSource.reanalyze)
-            if let contact {
-                rememberAlias(speaker.displayName, on: contact)
-            }
+            guard let contact else { continue }
+            SpeakerIdentityPass.enrollEmbedding(
+                embedding,
+                on: contact,
+                meetingID: meeting.id,
+                source: VoicePrintSource.reanalyze
+            )
+            rememberAlias(speaker.displayName, on: contact)
         }
     }
 

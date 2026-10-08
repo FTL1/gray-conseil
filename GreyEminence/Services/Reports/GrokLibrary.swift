@@ -1,9 +1,33 @@
 import Foundation
 import SwiftData
 
+/// Gate for work that can wait until the UI and a live recording are idle.
+enum BackgroundIdleWork {
+    static var resourcesAreFree: Bool {
+        let info = ProcessInfo.processInfo
+        if info.isLowPowerModeEnabled { return false }
+        switch info.thermalState {
+        case .serious, .critical: return false
+        default: return true
+        }
+    }
+
+    static func waitUntilIdle(isBusy: @escaping @MainActor () -> Bool) async {
+        while !Task.isCancelled {
+            let busy = await MainActor.run { isBusy() }
+            if !busy && resourcesAreFree { return }
+            try? await Task.sleep(for: .seconds(3))
+        }
+    }
+}
+
 /// Read-only projection of the meeting library for Grok (Secretary).
 /// SwiftData stays canonical. This writes markdown + `index.json` under
 /// Application Support so a local MCP can search the full archive.
+///
+/// Launch heal is offline: a background context, skipped when the file
+/// already exists, paused while recording or the machine is thermally
+/// constrained. A finished meeting still upserts that one record live.
 enum GrokLibrary {
     static let folderName = "grok-library"
 
@@ -42,15 +66,18 @@ enum GrokLibrary {
         var meetings: [Record]
     }
 
-    @MainActor
-    static func scheduleAtLaunch(mainContext: ModelContext, delaySeconds: UInt64 = 8) {
-        Task { @MainActor in
+    static func scheduleAtLaunch(
+        container: ModelContainer,
+        isBusy: @escaping @MainActor () -> Bool = { false },
+        delaySeconds: UInt64 = 10
+    ) {
+        Task(priority: .utility) {
             try? await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
-            syncAll(from: mainContext)
+            await BackgroundIdleWork.waitUntilIdle(isBusy: isBusy)
+            await syncAll(container: container)
         }
     }
 
-    @MainActor
     static func upsert(_ meeting: Meeting, into root: URL = defaultRoot) {
         guard !meeting.isInterviewMeeting else { return }
         let snap = DossierFacts.snapshot(meeting: meeting)
@@ -58,25 +85,57 @@ enum GrokLibrary {
         refreshIndex(into: root)
     }
 
-    @MainActor
-    static func syncAll(from context: ModelContext, into root: URL = defaultRoot) {
+    @discardableResult
+    static func syncAll(container: ModelContainer, into root: URL = defaultRoot) async -> (written: Int, reused: Int) {
+        await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            context.autosaveEnabled = false
+            return await syncAll(from: context, into: root)
+        }.value
+    }
+
+    /// Walk the store on whatever context the caller owns. Meetings that
+    /// already have `meta.json` keep their transcript files; only title /
+    /// date / duration / series are patched. New or missing folders get a
+    /// full snapshot.
+    @discardableResult
+    static func syncAll(from context: ModelContext, into root: URL = defaultRoot) async -> (written: Int, reused: Int) {
         let meetings = ((try? context.fetch(FetchDescriptor<Meeting>())) ?? [])
             .filter { !$0.isInterviewMeeting }
             .sorted { $0.date > $1.date }
+        let existing = loadExistingRecords(from: root)
         var keep: Set<String> = []
         var records: [Record] = []
+        var written = 0
+        var reused = 0
         for meeting in meetings {
+            let id = meeting.id.uuidString
+            if let current = existing[id], hasMeta(id: id, in: root) {
+                var record = current
+                record.title = meeting.title
+                record.date = isoDate(meeting.date)
+                record.duration = meeting.formattedDuration
+                record.series = emptyToNil(meeting.seriesTitle)
+                writeMeta(record, into: root)
+                keep.insert(id)
+                records.append(record)
+                reused += 1
+                continue
+            }
             let snap = DossierFacts.snapshot(meeting: meeting)
             let record = writeSnapshot(snap, series: meeting.seriesTitle, into: root)
             keep.insert(record.id)
             records.append(record)
+            written += 1
+            await Task.yield()
         }
         prune(keeping: keep, into: root)
         writeIndex(records, into: root)
         LogManager.send(
-            "Grok library: \(records.count) meeting(s)",
+            "Grok library: \(records.count) meeting(s), \(written) written, \(reused) reused",
             category: .general
         )
+        return (written, reused)
     }
 
     @discardableResult
@@ -116,9 +175,7 @@ enum GrokLibrary {
                 )
             }
         )
-        if let data = try? makeEncoder().encode(record) {
-            try? data.write(to: folder.appendingPathComponent("meta.json"), options: .atomic)
-        }
+        writeMeta(record, into: root)
         return record
     }
 
@@ -132,6 +189,36 @@ enum GrokLibrary {
         )
         guard let data = try? makeEncoder().encode(index) else { return }
         try? data.write(to: root.appendingPathComponent("index.json"), options: .atomic)
+    }
+
+    static func loadExistingRecords(from root: URL) -> [String: Record] {
+        let meetingsRoot = root.appendingPathComponent("meetings", isDirectory: true)
+        guard let folders = try? FileManager.default.contentsOfDirectory(
+            at: meetingsRoot,
+            includingPropertiesForKeys: nil
+        ) else { return [:] }
+        var records: [String: Record] = [:]
+        for folder in folders where folder.hasDirectoryPath {
+            let metaURL = folder.appendingPathComponent("meta.json")
+            guard let data = try? Data(contentsOf: metaURL),
+                  let record = try? JSONDecoder().decode(Record.self, from: data) else { continue }
+            records[record.id] = record
+        }
+        return records
+    }
+
+    private static func hasMeta(id: String, in root: URL) -> Bool {
+        let meta = root
+            .appendingPathComponent("meetings/\(id)", isDirectory: true)
+            .appendingPathComponent("meta.json")
+        return FileManager.default.fileExists(atPath: meta.path)
+    }
+
+    private static func writeMeta(_ record: Record, into root: URL) {
+        let folder = root.appendingPathComponent("meetings/\(record.id)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        guard let data = try? makeEncoder().encode(record) else { return }
+        try? data.write(to: folder.appendingPathComponent("meta.json"), options: .atomic)
     }
 
     private static func refreshIndex(into root: URL) {

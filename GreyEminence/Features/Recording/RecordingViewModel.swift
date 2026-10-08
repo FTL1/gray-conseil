@@ -972,6 +972,15 @@ final class RecordingViewModel {
             )
             if !finalSegmentsOK {
                 self.errorMessage = "Failed to save final transcript. The recording files are preserved on disk; please check disk space and retry export."
+            } else {
+                SpeakerIdentityPass.schedule(
+                    meetingID: meeting.id,
+                    container: modelContext.container,
+                    isBusy: { [weak self] in
+                        guard let self else { return false }
+                        return self.state != .idle || self.isFinishing
+                    }
+                )
             }
 
             // Mark as analyzing before navigating so the UI shows a spinner
@@ -1604,33 +1613,18 @@ final class RecordingViewModel {
         }
         processingTasks.append(coordTask)
 
-        // Observe coordinator segments and confidence
+        // Pull coordinator segments when the epoch moves. Idle 200ms ticks
+        // are a compare of two integers; echo dedup waits until persist.
         let observeTask = Task { [weak self] in
             guard let self else { return }
+            var lastEpoch: UInt64 = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 await MainActor.run {
-                    let rawSegments = self.coordinator.segments
-                    let newConfidence = self.coordinator.segmentConfidence
-                    guard rawSegments.count != self.segments.count
-                        || newConfidence.count != self.segmentConfidence.count else { return }
-                    let dedupResult = TranscriptDeduplicator.deduplicate(rawSegments)
-                    self.segments = dedupResult.segments
-                    self.segmentConfidence = newConfidence
-
-                    // Record the current section tag for any segment we haven't seen yet,
-                    // then apply all recorded tags to the segments array.
-                    if let tag = self.currentSectionTag, let tagID = self.currentSectionTagID {
-                        for segment in self.segments where self.segmentSectionTags[segment.id] == nil {
-                            self.segmentSectionTags[segment.id] = (tag: tag, tagID: tagID)
-                        }
-                    }
-                    for i in 0..<self.segments.count {
-                        if let recorded = self.segmentSectionTags[self.segments[i].id] {
-                            self.segments[i].sectionTag = recorded.tag
-                            self.segments[i].sectionTagID = recorded.tagID
-                        }
-                    }
+                    let epoch = self.coordinator.transcriptEpoch
+                    guard epoch != lastEpoch else { return }
+                    lastEpoch = epoch
+                    self.adoptLiveTranscript()
                 }
             }
         }
@@ -2236,8 +2230,9 @@ final class RecordingViewModel {
             }
             let allContacts = (try? modelContext?.fetch(FetchDescriptor<Contact>())) ?? contacts
             VoicePrintIsolation.isolate(embedding, owner: contact, among: allContacts)
-            contact.addVoicePrint(
+            SpeakerIdentityPass.enrollEmbedding(
                 embedding,
+                on: contact,
                 meetingID: currentMeeting?.id,
                 source: VoicePrintSource.session,
                 footprint: footprint,
@@ -2393,14 +2388,25 @@ final class RecordingViewModel {
     }
 
     private func refreshSegmentsFromCoordinator() {
-        let dedupResult = TranscriptDeduplicator.deduplicate(coordinator.segments)
-        segments = dedupResult.segments
-        for i in 0..<segments.count {
-            if let recorded = segmentSectionTags[segments[i].id] {
-                segments[i].sectionTag = recorded.tag
-                segments[i].sectionTagID = recorded.tagID
+        adoptLiveTranscript()
+    }
+
+    /// Share the coordinator's segment objects. Dedup runs at stop/persist.
+    private func adoptLiveTranscript() {
+        let raw = coordinator.segments
+        if let tag = currentSectionTag, let tagID = currentSectionTagID {
+            for segment in raw where segmentSectionTags[segment.id] == nil {
+                segmentSectionTags[segment.id] = (tag: tag, tagID: tagID)
             }
         }
+        for segment in raw {
+            if let recorded = segmentSectionTags[segment.id] {
+                segment.sectionTag = recorded.tag
+                segment.sectionTagID = recorded.tagID
+            }
+        }
+        segments = raw
+        segmentConfidence = coordinator.segmentConfidence
     }
 
     func snapshotSegments() -> [SegmentSnapshot] {
