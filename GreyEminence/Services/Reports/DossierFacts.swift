@@ -199,7 +199,6 @@ enum DossierFacts {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
-    @MainActor
     private static func sourceQuote(for item: ActionItem, in segments: [TranscriptSegment]) -> String? {
         guard let id = item.sourceSegmentID,
               let segment = segments.first(where: { $0.id == id }) else { return nil }
