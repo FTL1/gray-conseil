@@ -156,14 +156,14 @@ final class LibrarySearchTests: XCTestCase {
         let early = Meeting(title: "Weekly Review", date: Date(timeIntervalSince1970: 1_700_000_000))
         let late = Meeting(title: "Other Call", date: Date(timeIntervalSince1970: 1_800_000_000))
         var filter = LibrarySearchFilter()
-        filter.meetingName = "Campus"
+        filter.meetingName = "Weekly"
         filter.fromDate = Date(timeIntervalSince1970: 1_650_000_000)
         filter.toDate = Date(timeIntervalSince1970: 1_720_000_000)
         filter.sources = .intelligence
-        filter.text = "Campus"
+        filter.text = "Weekly"
         guard case .hits(let hits) = LibrarySearch.search(filter: filter, in: [early, late]) else {
             return XCTFail("expected hits")
         }
-        XCTAssertEqual(Set(hits.map(\.meetingTitle)), ["Campus Review"])
+        XCTAssertEqual(Set(hits.map(\.meetingTitle)), ["Weekly Review"])
     }
 }
